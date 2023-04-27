@@ -699,3 +699,329 @@ db.Table("users").Select("name", "age").Where("name = ?", "Antonio").Scan(&resul
 // Raw SQL
 db.Raw("SELECT name, age FROM users WHERE name = ?", "Antonio").Scan(&result)
 ```
+
+
+
+### 高级查询
+
+#### 智能选择字段
+
+gorm可以通过`Select` 方法选择字段，如果Select选择的字段经常使用，那么可以单独提取出结构体进行使用。
+
+~~~go
+type User struct {
+  ID     uint
+  Name   string
+  Age    int
+  Gender string
+  // 假设后面还有几百个字段...
+}
+
+type APIUser struct {
+  ID   uint
+  Name string
+}
+
+// 查询时会自动选择 `id`, `name` 字段
+db.Model(&User{}).Limit(10).Find(&APIUser{})
+// SELECT `id`, `name` FROM `users` LIMIT 10
+
+~~~
+
+
+
+#### 加锁Locking
+
+~~~go
+db.Clauses(clause.Locking{Strength: "UPDATE"}).Find(&users)
+// SELECT * FROM `users` FOR UPDATE
+//当使用这个指令时，查询结果集中所涉及的所有行都会被锁定，防止其他事务对这些行进行修改，直到当前事务结束。
+
+
+db.Clauses(clause.Locking{
+  Strength: "SHARE",
+  Table: clause.Table{Name: clause.CurrentTable},
+}).Find(&users)
+// SELECT * FROM `users` FOR SHARE OF `users`
+// of  针对某张表
+
+db.Clauses(clause.Locking{
+  Strength: "UPDATE",
+  Options: "NOWAIT",
+}).Find(&users)
+// SELECT * FROM `users` FOR UPDATE NOWAIT
+//它表示在尝试获取行级锁时，如果当前行被其他事务占用，则不会等待，而是立即返回异常。
+~~~
+
+
+
+#### 子查询
+
+~~~go
+db.Where("amount > (?)", db.Table("orders").Select("AVG(amount)")).Find(&orders)
+// SELECT * FROM "orders" WHERE amount > (SELECT AVG(amount) FROM "orders");
+
+subQuery := db.Select("AVG(age)").Where("name LIKE ?", "name%").Table("users")
+db.Select("AVG(age) as avgage").Group("name").Having("AVG(age) > (?)", subQuery).Find(&results)
+// SELECT AVG(age) as avgage FROM `users` GROUP BY `name` HAVING AVG(age) > (SELECT AVG(age) FROM `users` WHERE name LIKE "name%"
+~~~
+
+允许在`Table` 方法通过FROM子句使用子查询
+
+~~~go
+db.Table("(?) as u", db.Model(&User{}).Select("name", "age")).Where("age = ?", 18).Find(&User{})
+// SELECT * FROM (SELECT `name`,`age` FROM `users`) as u WHERE `age` = 18
+
+subQuery1 := db.Model(&User{}).Select("name")
+subQuery2 := db.Model(&Pet{}).Select("name")
+db.Table("(?) as u, (?) as p", subQuery1, subQuery2).Find(&User{})
+// SELECT * FROM (SELECT `name` FROM `users`) as u, (SELECT `name` FROM `pets`) as p
+~~~
+
+
+
+####  带多个列的in
+
+~~~go
+db.Where("(name, age, role) IN ?", [][]interface{}{{"jinzhu", 18, "admin"}, {"jinzhu2", 19, "user"}}).Find(&users)
+// SELECT * FROM users WHERE (name, age, role) IN (("jinzhu", 18, "admin"), ("jinzhu 2", 19, "user"));
+~~~
+
+
+
+#### Find至map
+
+允许将查找到的结果赋值给map
+
+~~~go
+result := map[string]interface{}{}
+db.Model(&User{}).First(&result, "id = ?", 1)
+
+var results []map[string]interface{}
+db.Table("users").Find(&results)
+~~~
+
+
+
+#### FirstOrInit
+
+获取第一条匹配的记录，或者根据给定的条件初始化一个实例（仅支持 sturct 和 map 条件）
+
+这里deleted_at ，gorm里面默认是记录删除时间。更改为`1/0`
+
+~~~go
+gorm.Model `gorm:"softDelete:flag"`
+~~~
+
+但修改后的问题，查询语句中对于删除的语句`deleted_at is NUll` ，会导致查询不出。所以使用下方的方式，添加一个全局作用域方法`Active`
+
+~~~go
+func Active() func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Where("deleted_at IS NULL OR deleted_at = 0")
+	}
+}
+~~~
+
+`Unscoped` 会去除默认作用域，`Scopes`再添加一个作用域
+
+~~~go
+db.Debug().Unscoped().Model(&User{}).Scopes(Active()).
+    Where("Name = ?", "zqy").FirstOrInit(&user)
+~~~
+
+
+
+如果没有找到记录，还可以使用`Attrs` 添加字段，但不会用于生成SQL语句
+
+~~~go
+// 未找到 user，则根据给定的条件以及 Attrs 初始化 user
+db.Where(User{Name: "non_existing"}).Attrs(User{Age: 20}).FirstOrInit(&user)
+// SELECT * FROM USERS WHERE name = 'non_existing' ORDER BY id LIMIT 1;
+// user -> User{Name: "non_existing", Age: 20}
+~~~
+
+#### FirstOrCreate
+
+获取匹配的第一条记录或者根据给定条件创建一条新纪录（仅 struct, map 条件有效），`RowsAffected` 返回创建、更新的记录数
+
+~~~go
+// 未找到 User，根据给定条件创建一条新纪录
+result := db.FirstOrCreate(&user, User{Name: "non_existing"})
+// INSERT INTO "users" (name) VALUES ("non_existing");
+// user -> User{ID: 112, Name: "non_existing"}
+// result.RowsAffected // => 1
+~~~
+
+如果没有找到记录，可以使用包含更多的属性的结构体创建记录，`Attrs` 不会被用于生成查询 SQL 。
+
+~~~go
+// 未找到 user，根据条件和 Assign 属性创建记录
+db.Where(User{Name: "non_existing"}).Attrs(User{Age: 20}).FirstOrCreate(&user)
+// SELECT * FROM users WHERE name = 'non_existing' ORDER BY id LIMIT 1;
+// INSERT INTO "users" (name, age) VALUES ("non_existing", 20);
+// user -> User{ID: 112, Name: "non_existing", Age: 20}
+~~~
+
+**不管是否找到记录，`Assign` 都会将属性赋值给 struct，并将结果写回数据库**
+
+
+
+#### 迭代
+
+GORM 支持通过行进行迭代
+
+```go
+rows, err := db.Model(&User{}).Where("name = ?", "jinzhu").Rows()
+defer rows.Close()
+
+for rows.Next() {
+  var user User
+  // ScanRows 方法用于将一行记录扫描至结构体
+  db.ScanRows(rows, &user)
+
+  // 业务逻辑...
+}
+```
+
+
+
+#### FindInBatches
+
+用于批量查询并处理记录
+
+```go
+// 每次批量处理 100 条
+result := db.Where("processed = ?", false).FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
+  for _, result := range results {
+    // 批量处理找到的记录
+  }
+
+  tx.Save(&results)
+
+  tx.RowsAffected // 本次批量操作影响的记录数
+
+  batch // Batch 1, 2, 3
+
+  // 如果返回错误会终止后续批量操作
+  return nil
+})
+
+result.Error // returned error
+result.RowsAffected // 整个批量操作影响的记录数
+```
+
+
+
+#### Pluck
+
+Pluck 用于从数据库查询单个列，并将结果扫描到切片。如果您想要查询多列，您应该使用 `Select` 和 `Scan`
+
+~~~go
+var ages []int64
+db.Model(&users).Pluck("age", &ages)
+
+var names []string
+db.Model(&User{}).Pluck("name", &names)
+
+db.Table("deleted_users").Pluck("name", &names)
+
+// Distinct Pluck,去重
+db.Model(&User{}).Distinct().Pluck("Name", &names)
+// SELECT DISTINCT `name` FROM `users`
+
+// 超过一列的查询，应该使用 `Scan` 或者 `Find`，例如：
+db.Select("name", "age").Scan(&users)
+db.Select("name", "age").Find(&users)
+~~~
+
+
+
+#### Scope
+
+`Scopes` 允许你指定常用的查询，可以在调用方法时引用这些查询
+
+~~~go
+func AmountGreaterThan1000(db *gorm.DB) *gorm.DB {
+  return db.Where("amount > ?", 1000)
+}
+
+func PaidWithCreditCard(db *gorm.DB) *gorm.DB {
+  return db.Where("pay_mode_sign = ?", "C")
+}
+
+func PaidWithCod(db *gorm.DB) *gorm.DB {
+  return db.Where("pay_mode_sign = ?", "C")
+}
+
+func OrderStatus(status []string) func (db *gorm.DB) *gorm.DB {
+  return func (db *gorm.DB) *gorm.DB {
+    return db.Where("status IN (?)", status)
+  }
+}
+
+db.Scopes(AmountGreaterThan1000, PaidWithCreditCard).Find(&orders)
+// 查找所有金额大于 1000 的信用卡订单
+
+db.Scopes(AmountGreaterThan1000, PaidWithCod).Find(&orders)
+// 查找所有金额大于 1000 的货到付款订单
+
+db.Scopes(AmountGreaterThan1000, OrderStatus([]string{"paid", "shipped"})).Find(&orders)
+// 查找所有金额大于 1000 且已付款或已发货的订单
+~~~
+
+
+
+#### Count
+
+**用于获得匹配的记录数**
+
+
+
+### 更新
+
+#### save 保存所有字段
+
+`Save` 会保存所有的字段，即使字段是零值
+
+~~~go
+db.First(&user)
+
+user.Name = "jinzhu 2"
+user.Age = 100
+db.Save(&user)
+// UPDATE users SET name='jinzhu 2', age=100, birthday='2016-01-01', updated_at = '2013-11-17 21:34:10' WHERE id=111;
+~~~
+
+如果没有添加主键值，那么save便会执行create方法。添加主键值才会执行更新
+
+#### update 更新单个列
+
+~~~go
+// Update with conditions
+db.Model(&User{}).Where("active = ?", true).Update("name", "hello")
+// UPDATE users SET name='hello', updated_at='2013-11-17 21:34:10' WHERE active=true;
+~~~
+
+#### updates 更新多个列
+
+```go
+// Update attributes with `struct`, will only update non-zero fieldsdb.Model(&user).Updates(User{Name: "hello", Age: 18, Active: false})
+UPDATE users SET name='hello', age=18, updated_at = '2013-11-17 21:34:10' WHERE id = 111;
+
+
+// Update attributes with `map`
+db.Model(&user).Updates(map[string]interface{}{"name": "hello", "age": 18, "active": false})
+// UPDATE users SET name='hello', age=18, active=false, updated_at='2013-11-17 21:34:10' WHERE id=111;
+
+```
+
+#### select 更新选定字段
+
+~~~go
+// Select with Map
+// User's ID is `111`:
+db.Model(&user).Select("name").Updates(map[string]interface{}{"name": "hello", "age": 18, "active": false})
+// UPDATE users SET name='hello' WHERE id=111;
+~~~
+
