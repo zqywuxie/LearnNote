@@ -1006,7 +1006,8 @@ db.Model(&User{}).Where("active = ?", true).Update("name", "hello")
 #### updates 更新多个列
 
 ```go
-// Update attributes with `struct`, will only update non-zero fieldsdb.Model(&user).Updates(User{Name: "hello", Age: 18, Active: false})
+// Update attributes with `struct`, will only update non-zero fields
+db.Model(&user).Updates(User{Name: "hello", Age: 18, Active: false})
 UPDATE users SET name='hello', age=18, updated_at = '2013-11-17 21:34:10' WHERE id = 111;
 
 
@@ -1016,6 +1017,17 @@ db.Model(&user).Updates(map[string]interface{}{"name": "hello", "age": 18, "acti
 
 ```
 
+如果没有主键为非空的记录，gorm就会执行批量更新`Model`
+
+~~~go
+// Update with struct
+db.Model(User{}).Where("role = ?", "admin").Updates(User{Name: "hello", Age: 18})
+// UPDATE users SET name='hello', age=18 WHERE role = 'admin';
+// 就会把role = admin的数据都更新
+~~~
+
+
+
 #### select 更新选定字段
 
 ~~~go
@@ -1024,4 +1036,354 @@ db.Model(&user).Updates(map[string]interface{}{"name": "hello", "age": 18, "acti
 db.Model(&user).Select("name").Updates(map[string]interface{}{"name": "hello", "age": 18, "active": false})
 // UPDATE users SET name='hello' WHERE id=111;
 ~~~
+
+
+
+#### 阻止全局更新
+
+如果没有条件执行批量更新，gorm不会允许，默认情况返回`ErrMissingWhereClause`。您必须使用某些条件或使用原始 SQL 或启用模式，例如：`AllowGlobalUpdate`
+
+~~~go
+db.Model(&User{}).Update("name", "jinzhu").Error // gorm.ErrMissingWhereClause
+
+db.Model(&User{}).Where("1 = 1").Update("name", "jinzhu")
+// UPDATE users SET `name` = "jinzhu" WHERE 1=1
+
+db.Session(&gorm.Session{AllowGlobalUpdate: true}).Model(&User{}).Update("name", "jinzhu")
+// UPDATE users SET `name` = "jinzhu"
+~~~
+
+
+
+#### 更新的记录数
+
+通过`RowsAffectd` 返回更新的记录数
+
+~~~go
+// Get updated records count with `RowsAffected`
+result := db.Model(User{}).Where("role = ?", "admin").Updates(User{Name: "hello", Age: 18})
+// UPDATE users SET name='hello', age=18 WHERE role = 'admin';
+
+result.RowsAffected // returns updated records count
+result.Error        // returns updating error
+~~~
+
+
+
+#### 高级选项
+
+##### 使用SQL表达式更新
+
+~~~go
+// product's ID is `3`
+db.Model(&product).Update("price", gorm.Expr("price * ? + ?", 2, 100))
+// UPDATE "products" SET "price" = price * 2 + 100, "updated_at" = '2013-11-17 21:34:10' WHERE "id" = 3;
+
+db.Model(&product).Updates(map[string]interface{}{"price": gorm.Expr("price * ? + ?", 2, 100)})
+// UPDATE "products" SET "price" = price * 2 + 100, "updated_at" = '2013-11-17 21:34:10' WHERE "id" = 3;
+
+db.Model(&product).UpdateColumn("quantity", gorm.Expr("quantity - ?", 1))
+// UPDATE "products" SET "quantity" = quantity - 1 WHERE "id" = 3;
+
+db.Model(&product).Where("quantity > 1").UpdateColumn("quantity", gorm.Expr("quantity - ?", 1))
+// UPDATE "products" SET "quantity" = quantity - 1 WHERE "id" = 3 AND quantity > 1;
+~~~
+
+还可以使用子查询进行更新
+
+~~~go
+db.Model(&user).Update("company_name", db.Model(&Company{}).Select("name").Where("companies.id = users.company_id"))
+// UPDATE "users" SET "company_name" = (SELECT name FROM companies WHERE companies.id = users.company_id);
+
+db.Table("users as u").Where("name = ?", "jinzhu").Update("company_name", db.Table("companies as c").Select("name").Where("c.id = u.company_id"))
+
+db.Table("users as u").Where("name = ?", "jinzhu").Updates(map[string]interface{}{"company_name": db.Table("companies as c").Select("name").Where("c.id = u.company_id")})
+~~~
+
+
+
+##### 不使用Hook和时间跟踪
+
+`UpdateColumn,UpdateColumns` 更新列，用法可与update(s)类似。但是不会使用Hook和时间跟踪(updatedat 不会被更新)
+
+~~~go
+//UPDATE `user` SET `age`=18,`name`='1212',`updated_at`='2023-04-28 09:19:07.802' WHERE age = 18 AND `user`.`deleted_at` IS NULL
+
+//可见updated_at更新
+db.Debug().Model(&User{}).Where("age = ?", 18).Update("name", "1212") 
+
+
+// UPDATE `user` SET `name`='1212' WHERE age = 18 AND `user`.`deleted_at` IS NULL
+// 不带updated_at
+db.Debug().Model(&User{}).Where("age = ?", 18).UpdateColumn("name", "1212")
+~~~
+
+
+
+##### 检查字段是否有更新
+
+在`BeforeUpdate`的Hook里面使用
+
+~~~go
+func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
+  // if Role changed
+    if tx.Statement.Changed("Role") {
+    return errors.New("role not allowed to change")
+    }
+
+  if tx.Statement.Changed("Name", "Admin") { // if Name or Role changed
+    tx.Statement.SetColumn("Age", 18)
+  }
+
+  // if any fields changed
+    if tx.Statement.Changed() {
+        tx.Statement.SetColumn("RefreshedAt", time.Now())
+    }
+    return nil
+}
+~~~
+
+
+
+##### 在update时 修改值
+
+~~~go
+func (user *User) BeforeSave(tx *gorm.DB) (err error) {
+  if pw, err := bcrypt.GenerateFromPassword(user.Password, 0); err == nil {
+    tx.Statement.SetColumn("EncryptedPassword", pw)
+  }
+
+  if tx.Statement.Changed("Code") {
+    user.Age += 20
+    tx.Statement.SetColumn("Age", user.Age)
+  }
+}
+
+db.Model(&user).Update("Name", "jinzhu")
+~~~
+
+
+
+### 删除
+
+#### 删除一条记录
+
+删除对象必须指定主键，否则会触发批量删除
+
+~~~go
+// Email 的 ID 是 `10`
+db.Delete(&email)
+// DELETE from emails where id = 10;
+
+// 带额外条件的删除
+db.Where("name = ?", "jinzhu").Delete(&email) 
+// DELETE from emails where id = 10 AND name = "jinzhu";
+~~~
+
+
+
+#### 根据主键删除
+
+~~~go
+db.Delete(&User{}, 10)
+// DELETE FROM users WHERE id = 10;
+
+db.Delete(&User{}, "10")
+// id默认为int类型，转入sql为int
+// DELETE FROM users WHERE id = 10;
+
+db.Delete(&users, []int{1,2,3})
+// DELETE FROM users WHERE id IN (1,2,3);
+
+~~~
+
+
+
+#### 批量删除
+
+**指定值不存在主键，会执行批量删除**
+
+可以将一个主键切片传递给`Delete` 方法，以便更高效的删除数据量大的记录
+
+```go
+var users = []User{{ID: 1}, {ID: 2}, {ID: 3}}
+db.Delete(&users)
+// DELETE FROM users WHERE id IN (1,2,3);
+
+db.Delete(&users, "name LIKE ?", "%jinzhu%")
+// DELETE FROM users WHERE name LIKE "%jinzhu%" AND id IN (1,2,3);
+```
+
+
+
+#### **阻止全局删除**
+
+当你试图执行不带任何条件的批量删除时，GORM将不会运行并返回`ErrMissingWhereClause` 错误
+
+如果一定要这么做，你必须添加一些条件，或者使用原生SQL，或者开启`AllowGlobalUpdate` 模式，如下例：
+
+~~~go
+db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&User{})
+// DELETE FROM users
+~~~
+
+
+
+#### 软删除
+
+如果你的模型包含了 `gorm.DeletedAt`字段（该字段也被包含在`gorm.Model`中），那么该模型将会自动获得软删除的能力！
+
+当调用`Delete`时，GORM并不会从数据库中删除该记录，而是将该记录的`DeleteAt`设置为当前时间，而后的一般查询方法将无法查找到此条记录。
+
+##### 删除标志
+
+`gorm.Model`使用`*time.Time`作为`DeletedAt` 的字段类型，不过软删除插件`gorm.io/plugin/soft_delete`同时也提供其他的数据格式支持`
+
+###### 使用 `1` / `0` 作为 删除标志
+
+~~~go
+go get gorm.io/plugin/soft_delete
+====
+DeletedAt soft_delete.DeletedAt `gorm:"softDelete:flag"`
+~~~
+
+###### 混合模式
+
+~~~go
+type User struct {
+  ID        uint
+  Name      string
+  DeletedAt time.Time
+  IsDel     soft_delete.DeletedAt `gorm:"softDelete:flag,DeletedAtField:DeletedAt"` // use `1` `0`
+  // IsDel     soft_delete.DeletedAt `gorm:"softDelete:,DeletedAtField:DeletedAt"` // use `unix second`
+  // IsDel     soft_delete.DeletedAt `gorm:"softDelete:nano,DeletedAtField:DeletedAt"` // use `unix nano second`
+}
+
+// 查询
+SELECT * FROM users WHERE is_del = 0;
+
+// 软删除
+UPDATE users SET is_del = 1, deleted_at = /* current unix second */ WHERE ID = 1;
+~~~
+
+
+
+##### 被软删除记录的操作
+
+`Unscoped`可以用来查询被软删除的记录，也可以用来永久删除匹配的记录
+
+~~~go
+db.Unscoped().Where("age = 20").Find(&users)
+// SELECT * FROM users WHERE age = 20;
+
+db.Unscoped().Delete(&order)
+// DELETE FROM orders WHERE id=10;
+~~~
+
+
+
+### 原生sql与sql生成器
+
+`Raw`和`Exec` 使用原生sql语句查询
+
+~~~go
+var result Result
+db.Raw("SELECT id, name, age FROM users WHERE id = ?", 3).Scan(&result)
+
+db.Exec("DROP TABLE users")
+db.Exec("UPDATE orders SET shipped_at = ? WHERE id IN ?", time.Now(), []int64{1, 2, 3})
+~~~
+
+
+
+#### 命名参数
+
+GORM 支持 [`sql.NamedArg`map[string]interface{}{}` 或 struct 形式的命名参数，例如：
+
+~~~go
+db.Where("name1 = @name OR name2 = @name", sql.Named("name", "jinzhu")).Find(&user)
+// SELECT * FROM `users` WHERE name1 = "jinzhu" OR name2 = "jinzhu"
+
+db.Where("name1 = @name OR name2 = @name", map[string]interface{}{"name": "jinzhu2"}).First(&result3)
+// SELECT * FROM `users` WHERE name1 = "jinzhu2" OR name2 = "jinzhu2" ORDER BY `users`.`id` LIMIT 1
+
+type NamedArgument struct {
+    Name string
+    Name2 string
+}
+
+db.Raw("SELECT * FROM users WHERE (name1 = @Name AND name3 = @Name) AND name2 = @Name2",
+     NamedArgument{Name: "jinzhu", Name2: "jinzhu2"}).Find(&user)
+// SELECT * FROM users WHERE (name1 = "jinzhu" AND name3 = "jinzhu") AND name2 = "jinzhu2"
+~~~
+
+
+
+#### DeyRun模式
+
+不执行情况下生成SQL语句 ，为后续执行做准备
+
+~~~go
+stmt := db.Session(&gorm.Session{DryRun: true}).First(&user, 1).Statement
+stmt.SQL.String() //=> SELECT * FROM `users` WHERE `id` = $1 ORDER BY `id`
+stmt.Vars         //=> []interface{}{1}
+~~~
+
+
+
+#### Row & Rows
+
+获得`*sql.Row`
+
+~~~go
+// 使用 GORM API 构建 SQL
+row := db.Table("users").Where("name = ?", "jinzhu").Select("name", "age").Row()
+row.Scan(&name, &age)
+
+// 使用原生 SQL
+row := db.Raw("select name, age, email from users where name = ?", "jinzhu").Row()
+row.Scan(&name, &age, &email)
+
+~~~
+
+~~~go
+获取 *sql.Rows 结果
+
+// 使用 GORM API 构建 SQL
+rows, err := db.Model(&User{}).Where("name = ?", "jinzhu").Select("name, age, email").Rows()
+defer rows.Close()
+for rows.Next() {
+  rows.Scan(&name, &age, &email)
+
+  // 业务逻辑...
+}
+
+// 原生 SQL
+rows, err := db.Raw("select name, age, email from users where name = ?", "jinzhu").Rows()
+defer rows.Close()
+for rows.Next() {
+  rows.Scan(&name, &age, &email)
+
+  // 业务逻辑...
+}
+~~~
+
+
+
+#### 将 `sql.Rows` 扫描至 model
+
+使用 `ScanRows` 将一行记录扫描至 struct，例如：
+
+```go
+rows, err := db.Model(&User{}).Where("name = ?", "jinzhu").Select("name, age, email").Rows() // (*sql.Rows, error)
+defer rows.Close()
+
+var user User
+for rows.Next() {
+  // ScanRows 将一行扫描至 user
+  db.ScanRows(rows, &user)
+
+  // 业务逻辑...
+}
+```
 
