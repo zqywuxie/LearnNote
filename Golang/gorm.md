@@ -2,6 +2,30 @@
 
 ## 入门
 
+### 注意细节
+
+> **在实际项目中定义数据库模型注意以下几点：**
+>
+> 1、**结构体的名称必须首字母大写** ，并和数据库表名称对应。例如：表名称为 user 结构体
+>
+> 名称定义成 User，表名称为 article_cate 结构体名称定义成 ArticleCate
+>
+> 2、结构体中的**字段名称首字母必须大写**，并和数据库表中的字段一一对应。例如：下面结构体中的 Id 和数据库中的 id 对应,Username 和数据库中的 username 对应，Age 和数据库中
+>
+> 的 age 对应，Email 和数据库中的 email 对应，AddTime 和数据库中的 add_time 字段对应
+>
+> 3、**默认情况表名是结构体名称的复数形式**。如果我们的结构体名称定义成 User，表示这个
+>
+> 模型默认操作的是 users 表。
+>
+> 4、我们可以使用结构体中的自定义方法 TableName 改变结构体的默认表名称，如下:
+>
+> ```go
+> func (User) TableName() string { return "user" }
+> ```
+>
+> 表示把 User 结构体默认操作的表改为 user 表
+
 ### 概述
 
 **全功能ORM库，方便操作数据库。**
@@ -1387,3 +1411,644 @@ for rows.Next() {
 }
 ```
 
+
+
+## 关联
+
+### Belongs To
+
+`belongs to` 会与另一个模型建立了一对一的连接。 这种模型的每一个实例都“属于”另一个模型的一个实例。
+
+如下每个user只能被分配给一个company
+
+默认情况下外键的名字，**使用拥有者的类型名称加上表的主键的字段名字**（Company+ID)
+
+~~~go
+// `User` 属于 `Company`，`CompanyID` 是外键
+type User struct {
+  gorm.Model
+  Name      string
+  CompanyID int
+  Company   Company
+}
+
+type Company struct {
+  ID   int
+  Name string
+}
+~~~
+
+#### 重写外键
+
+~~~go
+type User struct {
+  gorm.Model
+  Name         string
+  CompanyRefer int
+  Company      Company `gorm:"foreignKey:CompanyRefer"`
+  // 使用 CompanyRefer 作为外键
+}
+
+type Company struct {
+  ID   int
+  Name string
+}
+~~~
+
+
+
+#### 重写引用
+
+如上都是使用表的主键 作为外键的参考，还可以使用其他字段作为外键
+
+~~~go
+type User struct {
+  gorm.Model
+  Name      string
+  CompanyID string
+  Company   Company `gorm:"references:Code"` // 使用 Code 作为引用
+}
+
+type Company struct {
+  ID   int
+  Code string
+  Name string
+}
+~~~
+
+
+
+> **NOTE** 如果外键名恰好在拥有者类型中存在，GORM 通常会错误的认为它是 `has one` 关系。我们需要在 `belongs to` 关系中指定 `references`
+
+~~~go
+type User struct {
+  gorm.Model
+  Name      string
+  CompanyID string
+  Company   Company `gorm:"references:CompanyID"` // 使用 Company.CompanyID 作为引用
+}
+
+type Company struct {
+  CompanyID   int
+  Code        string
+  Name        string
+}
+~~~
+
+
+
+#### CRUD
+
+##### 创建
+
+在创建、更新记录时，GORM 会通过 Upsert 自动保存关联及其引用记录。所以保存User就会连带保存Company表的数据
+
+##### 查询
+
+~~~go
+db.Debug().First(&user)
+~~~
+
+![image-20230429100714704](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429100714704.png)
+
+ 可以看到关联的company表并没有被查询出来。解决办法是使用`Preload` 预加载company表的数据。
+
+~~~go
+db.Debug().Preload("Company").First(&user)
+~~~
+
+![image-20230429100821306](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429100821306.png)
+
+
+
+#### 关联模式
+
+##### a.查询关联
+
+查询user匹配的关联记录，使用`Association`
+
+~~~go
+var user User
+var c company
+db.Where("id = ?", 15).Take(&user)
+// 先查询出指定的user
+
+//然后再使用Association
+db.Model(&user).Association("Company").Find(&c)
+fmt.Println(c)
+~~~
+
+##### b. 删除关联
+
+user 可以关联 company，同样也可以不关联，但是去库里删很麻烦，用Delete方法删除源模型与参数之间的关系，`**只会删除引用，不会从数据库中删除这些对象。**`
+
+~~~go
+var user User
+db.Where("id = ?", 15).Find(&user)
+db.Debug().Model(&user).Association("Company").Delete(&company{
+    ID: 2,
+})
+/*
+UPDATE `user` SET `CompanyID`=NULL WHERE `user`.`id` = 15 AND `user`.`CompanyID` = 2 AND `user`.`deleted_at` IS NULL
+*/
+~~~
+
+![image-20230429102029851](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429102029851.png)
+
+
+
+##### c.添加引用
+
+~~~go
+var user User
+db.Where("id = ?", 15).Find(&user)
+db.Debug().Model(&user).Association("Company").Append(&company{
+    ID: 2,
+})
+/*
+UPDATE `user` SET `updated_at`='2023-04-29 10:20:53.433',`CompanyID`=2 WHERE `user`.`deleted_at` IS NULL AND `id` = 15
+*/
+~~~
+
+![image-20230429102128325](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429102128325.png)
+
+
+
+##### d. 修改引用
+
+![image-20230429102238603](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429102238603.png)
+
+~~~go
+var user User
+db.Where("id = ?", 15).Find(&user)
+db.Debug().Model(&user).Association("Company").Replace(&company{
+    ID: 5,
+})
+/*
+UPDATE `user` SET `updated_at`='2023-04-29 10:20:53.433',`CompanyID`=2 WHERE `user`.`deleted_at` = 5  AND `id` = 15
+*/
+~~~
+
+
+
+### Has one
+
+> Has one很像属于（belongs to）关系，都是一对一关系，区别是`Has One关系和Belongs To关系，持有关联Model属性的关系是相反的`，例如：A 关联 B，Has One关系通常是A 结构体持有B属性， belongs to关系则是B结构体持有A。
+
+~~~go
+// User 有一张 CreditCard，UserID 是外键
+type User struct {
+	gorm.Model
+	CreditCard CreditCard
+}
+
+type CreditCard struct {
+	gorm.Model
+	Number string
+	UserID uint
+}
+
+func main() {
+	//这里需要先创建users表，再创建credit_cards表
+    // 自动迁移，也就是自动建表(cool!)
+	db.AutoMigrate(&User{}, &CreditCard{})
+}
+~~~
+
+#### a.创建记录
+
+~~~go
+c := CreditCard{
+    //Model:  gorm.Model{},
+    Number: "12345",
+    //UserID: 0,
+}
+u := User{
+    CreditCard: c,
+}
+db.Create(&u)
+~~~
+
+![image-20230429103058950](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429103058950.png)
+
+#### b. 查询记录
+
+~~~go
+var u User
+db.Debug().Model(&User{}).Preload("CreditCard").First(&u)
+fmt.Println(u.CreditCard)
+/*
+{{1 2023-04-29 10:29:56.014 +0800 CST 2023-04-29 10:29:56.014 +0800 CST {0001-01-01 00:00:00 +0000 UTC false}} 12345 1}
+*/
+~~~
+
+
+
+#### c.重写外键
+
+> 默认情况下Has One关系的外键由持有关联属性的类型名 + 主键 组成外键名，如上例，User关联CreditCard的外键就是User + ID = UserID。
+
+可以使用`foreignKey` 修改
+
+~~~go
+type User struct {
+  gorm.Model
+  CreditCard CreditCard `gorm:"foreignKey:UserName"`
+  // use UserName as foreign key
+}
+
+type CreditCard struct {
+  gorm.Model
+  Number   string
+  UserName string
+}
+~~~
+
+
+
+#### d.重写引用
+
+> 默认情况下，保存User的时候，会自动将User的主键保存到外键UserID中，关联查询的时候，也会使用外键和关联外键进行关联进行查询，这里User的ID就是`关联外键`
+
+可以使用标签 `references` 来更改它
+
+~~~go
+type User struct {
+  gorm.Model
+  Name       string     `gorm:"index"`
+  CreditCard CreditCard `gorm:"foreignkey:UserName;references:name"`
+}
+
+type CreditCard struct {
+  gorm.Model
+  Number   string
+  UserName string
+}
+~~~
+
+#### e.关联模式
+
+查看关联，删除关联，修改关联，添加关联都与`Belongs To` 一致
+
+### Has Many 一对多
+
+`has many` 与另一个模型建立了一对多的连接。 不同于 has one，拥有者可以有零或多个关联模型。
+
+ **创建记录和查询记录与前面一样，只是单条关联换成多条数组关联**
+
+#### 预加载
+
+##### **预加载全部**
+
+与创建、更新时使用 Select 类似，`clause.Associations` 也可以和 `Preload`一起使用，它可以用来 `预加载全部关联
+
+~~~go
+type User struct {
+  gorm.Model
+  Name       string
+  CompanyID  uint
+  Company    Company
+  Role       Role
+  Orders     []Order
+}
+
+db.Preload(clause.Associations).Find(&users)
+~~~
+
+
+
+##### **嵌套预加载**
+
+~~~go
+// User 有多张 CreditCard，UserID 是外键
+type User struct {
+	gorm.Model
+	CreditCards []CreditCard
+}
+
+type CreditCard struct {
+	gorm.Model
+	Number string
+	UserID uint
+	Info   Info
+}
+
+type Info struct {
+	ID           uint
+	Name         string
+	Age          int
+	CreditCardID int
+}
+~~~
+
+可以见到`User` 与`CreditCard` 关联，`CreditCard` 与`Info` 关联。单次预加载是满足不了需求，所以就需要使用到嵌套预加载
+
+~~~go
+var user User
+//CreditCards.Info关联的下层结构
+db.Model(&User{}).Preload("CreditCards.Info").Preload("CreditCards").Find(&user)
+fmt.Println(user)
+~~~
+
+
+
+##### 带条件的预加载
+
+~~~go
+var user User
+//找到信用卡号不等于`123456`的记录
+db.Model(&User{}).Preload("CreditCards.Info").Preload("CreditCards", "Number <> ?", "123456").Find(&user)
+fmt.Println(user)
+~~~
+
+###### a.Joins 预加载
+
+~~~go
+db.Model(&User{}).Preload("CreditCards").Preload("CreditCards.Info", "name <> ?", "zqy").Find(&user)
+~~~
+
+![image-20230429110548590](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429110548590.png)
+
+虽然Info里面的条件根据条件去除了，但是上一层的`CreditCards`还是展示了，不满足我们需求。所以需要使用`自定义加载SQL以及 Joins 预加载`
+
+~~~go
+var user User
+db.Model(&User{}).Preload("CreditCards", func(db *gorm.DB) *gorm.DB {
+    return db.Joins("Info").Where("name <> ?", "zqy")
+}).Find(&user)
+fmt.Println(user)
+~~~
+
+> 注意：`Preload` 在一个单独查询中加载关联数据。而 `Join Preload` 会使用 left join 加载关联数据。
+> `Join Preload 适用于一对一的关系`，例如： has one, belongs to。
+
+
+
+#### 多态关联
+
+GORM 为 `has one` 和 `has many` 提供了多态关联支持，它会将拥有者实体的表名、主键都保存到多态类型的字段中。
+
+~~~go
+type User struct {
+	ID      int
+	Name    string
+	//polymorphic指定多态类型，比如模型名
+	Address Address `gorm:"polymorphic:Owner;"`
+}
+
+type Order struct {
+	ID      int
+	Name    string
+	Address Address `gorm:"polymorphic:Owner;"`
+}
+
+type Address struct {
+	ID        int
+	Name      string
+	OwnerID   int
+	OwnerType string
+}
+
+func main() {
+	db.AutoMigrate(&User{}, &Order{}, &Address{})
+    db.Create(&User{
+	Name: "linzy",
+	Address: Address{
+		Name: "翻斗花园",
+	},
+})
+	db.Create(&Order{
+	Name: "忘崽牛奶",
+	Address: Address{
+		Name: "火星幼儿园",
+	},
+})
+}
+~~~
+
+![在这里插入图片描述](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/a0de07b93151442aa8d6c3013178c0a6.png)
+
+
+
+#### 关联模式
+
+关联模式下的CRUD关联都是类似的写法
+
+##### 1) 清空关联
+
+删除源模型与关联之间的所有引用，但不会删除这些关联
+
+~~~go
+var user User
+db.First(&user)
+db.Model(&user).Association("CreditCards").Clear()
+~~~
+
+##### 2）关联计数
+
+返回当前关联的总数。
+
+```go
+var user User
+db.First(&user)
+//添加关联
+db.Model(&user).Association("CreditCards").Append(&CreditCard{
+	Model: gorm.Model{
+		ID: 1,
+	},
+}, &CreditCard{
+	Model: gorm.Model{
+		ID: 2,
+	},
+})
+
+//关联计数
+count := db.Model(&user).Association("CreditCards").Count()
+fmt.Println(count)
+/*
+2
+*/
+```
+
+
+
+### Mang To Mang 多对多
+
+一个 用户可以说多种 语言，多个 用户也可以说一种 语言。
+
+```go
+// User 拥有并属于多种 language，`user_languages` 是连接表
+type User struct {
+  gorm.Model
+  Languages []Language `gorm:"many2many:user_languages;"`
+}
+
+type Language struct {
+  gorm.Model
+  Name string
+}
+```
+
+> 当使用 GORM 的 AutoMigrate 为 User 创建表时，GORM 会自动创建连接表。
+> 某种意义上这种其实还是`一对多`的关系，反向引用的形式才是真正多对多的关系。
+
+#### 反向引用
+
+~~~go
+// User 拥有并属于多种 language，`user_languages` 是连接表
+type User struct {
+  gorm.Model
+  Languages []Language `gorm:"many2many:user_languages;"`
+}
+
+type Language struct {
+  gorm.Model
+  Name string
+  Users []User `gorm:"many2many:user_languages;"`
+}
+func main() {
+	db.AutoMigrate(&User{}, &Language{})
+}
+~~~
+
+![image-20230429112520925](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429112520925.png)
+
+![image-20230429112534999](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429112534999.png)
+
+会创建一张中间表
+
+#### 创建记录
+
+~~~go
+l1 := Language{
+	Name: "中文",
+}
+l2 := Language{
+	Name: "英文",
+}
+u1 := User{
+	Languages: []Language{l1, l2},
+}
+db.Create(&u1)
+~~~
+
+![image-20230429112723771](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429112723771.png)
+
+- 创建外星语被两个用户所使用的记录：
+
+~~~go
+u := User{}
+l := Language{
+	Name:  "外星语",
+	//也可以直接指定创建好的记录的主键
+	Users: []User{u, User{Model: gorm.Model{ID: 1}}},
+}
+db.Create(&l)
+~~~
+
+![image-20230429112922683](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429112922683.png)
+
+
+
+#### 查找记录
+
+~~~go
+u := User{}
+db.Where("id = ?", 1).Find(&u)
+db.Model(&User{}).Preload("Languages").Find(&u)
+fmt.Println(u)
+
+/*
+{{1 2023-04-29 11:26:52.658 +0800 CST 2023-04-29 11:26:52.658 +0800 CST {0001-01-01 00:00:00 +0000 UTC false}} [{{1 2023-04-29 11:26:52.671 +0800 CST 2023-04-29 11:26:52.671 +0800 CST {0001-01-01 00:00:00 +0000 UTC false}}  中文]} {{2 2023-04-29 11:26:52.671 +0800 CST 2023-04-29 11:26:52.671 +0800 CST {0001-01-01 00:00:00 +0000 UTC false}} 英文 []} {{3 2023-04-29 11:28:46.105 +00 CST 2023-04-29 11:28:46.105 +0800 CST {0001-01-01 00:00:00 +0000 UTC false}} 外星语 []}]}
+*/
+~~~
+
+
+
+#### 关联模式
+
+##### 1）查询关联
+
+~~~go
+u := User{}
+db.Where("id = ?", 2).Find(&u)
+var l []Language
+db.Model(&u).Association("Languages").Find(&l)
+fmt.Println(l)
+~~~
+
+
+
+##### 2）添加关联
+
+~~~go
+u := User{}
+db.Where("id = ?", 2).Find(&u)
+l1 := Language{
+	Name: "俄语",
+}
+l2 := Language{
+	Name: "法语",
+}
+db.Model(&u).Association("Languages").Append(&l1, &l2)
+~~~
+
+同时也会添加不存在的数据l1,l2进去
+
+
+
+##### 3）删除关联
+
+只删除关联，不删除数据
+
+~~~go
+u := User{}
+db.Where("id = ?", 2).Find(&u)
+db.Model(&u).Association("Languages").Delete(&Language{
+	Model: gorm.Model{
+		ID: 3,
+	},
+})
+~~~
+
+
+
+##### 4）修改关联
+
+~~~go
+u := User{}
+db.Where("id = ?", 2).Find(&u)
+db.Model(&u).Association("Languages").Replace(&Language{
+	Model: gorm.Model{
+		ID: 3,
+	},
+})
+~~~
+
+![image-20230429113709562](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429113709562.png)
+
+修改后
+
+![image-20230429113716751](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230429113716751.png)
+
+> 注意：在多对多使用修改关联会把连接表里面所有关于`主表主键与外键关联的记录`全部替换掉，慎用此操作。也就是以前的关联全部删除，然后新增修改的关联
+
+##### 5） 清空关联
+
+~~~go
+u := User{}
+db.Where("id = ?", 2).Find(&u)
+db.Model(&u).Association("Languages").Clear()
+~~~
+
+
+
+### 小结
+
+| 关联的类型 | 描述                                                         |
+| ---------- | ------------------------------------------------------------ |
+| 一对一     | 两个表在关联的每一侧只能具有一个记录。  每个主键值或者与相关表中的所有记录都无关，或者仅与一个记录相关。  大多数一对一关联是由业务规则强制的，而不是从数据自然流动。 若没有这样的规则，通常可以将两个表相结合，而不会违反任何规范化规则。 |
+| 一对多     | 主键表只包含一个记录，其与相关表中零个、一个或多个记录相关。 |
+| 多对多     | 两个表中的每个记录都可以与另一个表中的零个或任意数目个记录相关。 由于关系系统不能直接适应关联，因此这些关联需要第三个表，其称为关联或链接表。 |
+
+![在这里插入图片描述](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/a11fcff749654e529b60700ad63a52a9.png)
