@@ -1800,6 +1800,7 @@ type Order struct {
 	ID      int
 	Name    string
 	Address Address `gorm:"polymorphic:Owner;"`
+    // Owner -> ownerID/ownerName
 }
 
 type Address struct {
@@ -2052,3 +2053,355 @@ db.Model(&u).Association("Languages").Clear()
 | 多对多     | 两个表中的每个记录都可以与另一个表中的零个或任意数目个记录相关。 由于关系系统不能直接适应关联，因此这些关联需要第三个表，其称为关联或链接表。 |
 
 ![在这里插入图片描述](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/a11fcff749654e529b60700ad63a52a9.png)
+
+
+
+### 预加载
+
+#### Preload
+
+GORM允许使用 `Preload`通过多个SQL中来直接加载关系
+
+~~~go
+type User struct {
+  gorm.Model
+  Username string
+  Orders   []Order
+}
+
+type Order struct {
+  gorm.Model
+  UserID uint
+  Price  float64
+}
+
+// 查找 user 时预加载相关 Order
+db.Preload("Orders").Find(&users)
+// SELECT * FROM users;
+// SELECT * FROM orders WHERE user_id IN (1,2,3,4);
+
+db.Preload("Orders").Preload("Profile").Preload("Role").Find(&users)
+// SELECT * FROM users;
+// SELECT * FROM orders WHERE user_id IN (1,2,3,4); // has many
+// SELECT * FROM profiles WHERE user_id IN (1,2,3,4); // has one
+// SELECT * FROM roles WHERE id IN (4,5,6); // belongs to
+~~~
+
+预加载顺序，从左到右
+
+#### Joins
+
+`Preload` 在一个**单独查询**中加载关联数据。而 `Join Preload` 会使用 left join 加载关联数据，例如：
+
+~~~go
+db.Joins("Company").Joins("Manager").Joins("Account").First(&user, 1)
+db.Joins("Company").Joins("Manager").Joins("Account").First(&user, "users.name = ?", "jinzhu")
+~~~
+
+解决嵌套数据
+
+还可以带条件
+
+~~~go
+db.Joins("Company", DB.Where(&Company{Alive: true})).Find(&users)
+~~~
+
+> **注意** `Join Preload` 适用于一对一的关系（因为是多表联查），例如： `has one`, `belongs to`
+
+
+
+#### 预加载全部
+
+`clause.Associations` 也可以和 `Preload` 一起使用，它可以用来 `预加载` 全部关联，例如：
+
+```go
+type User struct {
+  gorm.Model
+  Name       string
+  CompanyID  uint
+  Company    Company
+  Role       Role
+  Orders     []Order
+}
+
+db.Preload(clause.Associations).Find(&users)
+```
+
+`clause.Associations`不会预加载嵌套的关联关系，但是你可以将其与[嵌套预加载](https://gorm.io/zh_CN/docs/preload.html#nested_preloading)一起使用， 例如：
+
+```go
+db.Preload("Orders.OrderItems.Product").Preload(clause.Associations).Find(&users）
+```
+
+
+
+#### 条件预加载
+
+~~~go
+db.Where("state = ?", "active").Preload("Orders", "state NOT IN (?)", "cancelled").Find(&users)
+// SELECT * FROM users WHERE state = 'active';
+// SELECT * FROM orders WHERE user_id IN (1,2) AND state NOT IN ('cancelled');
+~~~
+
+综上可以看到预加载都是排在正式加载之后的，因为要先得到正式加载的数据主键
+
+
+
+## 教程
+
+### 链式操作
+
+GORM 允许进行链式操作，所以您可以像这样写代码：
+
+```go
+db.Where("name = ?", "jinzhu").Where("age = ?", 18).First(&user)
+```
+
+**GORM 中有三种类型的方法： `链式方法`、`终结方法`、`新建会话方法`**
+
+在 `链式方法`, `终结方法`之后, GORM 返回一个初始化的 `*gorm.DB` 实例，**实例不能安全地重复使用，并且新生成的 SQL 可能会被先前的条件污染**，例如：
+
+```go
+queryDB := DB.Where("name = ?", "jinzhu")
+
+queryDB.Where("age > ?", 10).First(&user)
+// SELECT * FROM users WHERE name = "jinzhu" AND age > 10
+
+queryDB.Where("age > ?", 20).First(&user2)
+// SELECT * FROM users WHERE name = "jinzhu" AND age > 10 AND age > 20
+```
+
+为了重新使用初始化的 `*gorm.DB` 实例, 您可以使用 `新建会话方法` 创建一个可共享的 `*gorm.DB`, 例如:
+
+```go
+queryDB := DB.Where("name = ?", "jinzhu").Session(&gorm.Session{})
+
+queryDB.Where("age > ?", 10).First(&user)
+// SELECT * FROM users WHERE name = "jinzhu" AND age > 10
+
+queryDB.Where("age > ?", 20).First(&user2)
+// SELECT * FROM users WHERE name = "jinzhu" AND age > 20
+```
+
+
+
+#### 链式方法
+
+链式方法是将 `Clauses` 修改或添加到当前 `Statement` 的方法，例如：
+
+`Where`, `Select`, `Omit`, `Joins`, `Scopes`, `Preload`, `Raw` 
+
+
+
+#### 终结方法
+
+终结（方法） 是会立即执行注册回调的方法，然后生成并执行 SQL，比如这些方法：
+
+`Create`, `First`, `Find`, `Take`, `Save`, `Update`, `Delete`, `Scan`, `Row`, `Rows`…
+
+
+
+### 会话
+
+GORM 提供了 Session 方法，这是一个 New Session Method，它允许创建带配置的新建会话模式
+
+#### DryRun
+
+生成 `SQL` 但不执行。 它可以用于准备或测试生成的 SQL，例如：
+
+```go
+// 新建会话模式
+stmt := db.Session(&Session{DryRun: true}).First(&user, 1).Statement
+stmt.SQL.String() //=> SELECT * FROM `users` WHERE `id` = $1 ORDER BY `id`
+stmt.Vars         //=> []interface{}{1}
+
+// 全局 DryRun 模式
+db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{DryRun: true})
+```
+
+#### 预编译
+
+`PreparedStmt` 在执行任何 SQL 时都会创建一个 prepared statement 并将其缓存，以提高后续的效率
+
+> 默认情况下，GORM 的每个数据库操作都会打开和关闭一个新的数据库连接。这种方式虽然很方便，但对于需要频繁执行操作或需要执行多个相关操作的应用程序来说，可能会导致性能问题。
+
+要使用持续会话模式，可以在创建 GORM 数据库实例时添加 `gorm:session_mode` 配置选项，如下所示：
+
+```go
+goCopy Codedb, err := gorm.Open(mysql.Open("dsn"), &gorm.Config{
+ //预编译
+  PrepareStmt: true,
+  // 启用持续会话模式
+  SessionMode: gorm.SessionMode(2),
+})
+```
+
+
+
+#### 跳过钩子方法
+
+使用 `SkipHooks`
+
+~~~go
+DB.Session(&gorm.Session{SkipHooks: true}).Create(&user)
+~~~
+
+#### Context
+
+通过 `Context` 选项，您可以传入 `Context` 来追踪 SQL 操作，例如：
+
+```go
+timeoutCtx, _ := 
+//超时功能，超时自动取消上下文
+context.WithTimeout(context.Background(), time.Second)
+tx := db.Session(&Session{Context: timeoutCtx})
+
+tx.First(&user) // 带有 context timeoutCtx 的查询操作
+tx.Model(&user).Update("role", "admin") // 带有 context timeoutCtx 的更新操作
+```
+
+GORM 也提供了简写形式的方法 `WithContext`，其实现如下：
+
+```go
+func (db *DB) WithContext(ctx context.Context) *DB {
+  return db.Session(&Session{Context: ctx})
+}
+```
+
+
+
+### 钩子
+
+#### 创建对象
+
+> // 开始事务
+> BeforeSave
+> BeforeCreate
+> // 关联前的 save
+> // 插入记录至 db
+> // 关联后的 save
+> AfterCreate
+> AfterSave
+> // 提交或回滚事务
+
+~~~go
+func (u *User) AfterCreate(tx *gorm.DB) (err error) {
+  if u.ID == 1 {
+    tx.Model(u).Update("role", "admin")
+  }
+  return
+}
+~~~
+
+> **注意** 在 GORM 中**保存、删除操作会默认运行在事务上**， 因此在事务完成之前该事务中所作的更改是不可见的，**如果您的钩子返回了任何错误，则修改将被回滚。**
+
+```go
+func (u *User) AfterCreate(tx *gorm.DB) (err error) {
+  if !u.IsValid() {
+    return errors.New("rollback invalid user")
+  }
+  return nil
+}
+```
+
+更新
+
+> // 开始事务
+> BeforeSave
+> BeforeUpdate
+> // 关联前的 save
+> // 更新 db
+> // 关联后的 save
+> AfterUpdate
+> AfterSave
+> // 提交或回滚事务
+
+删除
+
+> // 开始事务
+> BeforeDelete
+> // 删除 db 中的数据
+> AfterDelete
+> // 提交或回滚事务
+
+查找
+
+> // 从 db 中加载数据
+> // Preloading (eager loading)
+> AfterFind
+
+
+
+### 事务
+
+#### 禁用默认事务
+
+为了确保数据一致性，GORM 会在事务里执行写入操作（创建、更新、删除）。如果没有这方面的要求，您可以在初始化时禁用它，这将获得大约 30%+ 性能提升。
+
+```go
+// 全局禁用
+db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{
+  SkipDefaultTransaction: true,
+})
+
+// 持续会话模式
+tx := db.Session(&Session{SkipDefaultTransaction: true})
+tx.First(&user, 1)
+tx.Find(&users)
+tx.Model(&user).Update("Age", 18)
+```
+
+
+
+**在事务中执行操作**
+
+~~~go
+db.Transaction(func(tx *gorm.DB) error {
+  // 在事务中执行一些 db 操作（从这里开始，您应该使用 'tx' 而不是 'db'）
+  if err := tx.Create(&Animal{Name: "Giraffe"}).Error; err != nil {
+    // 返回任何错误都会回滚事务
+    return err
+  }
+
+  if err := tx.Create(&Animal{Name: "Lion"}).Error; err != nil {
+    return err
+  }
+
+  // 返回 nil 提交事务
+  return nil
+})
+~~~
+
+#### 手动事务
+
+~~~go
+// 开始事务
+tx := db.Begin()
+
+// 在事务中执行一些 db 操作（从这里开始，您应该使用 'tx' 而不是 'db'）
+tx.Create(...)
+
+// ...
+
+// 遇到错误时回滚事务
+tx.Rollback()
+
+// 否则，提交事务
+tx.Commit()
+~~~
+
+#### SavePoint、RollbackTo
+
+GORM 提供了 `SavePoint`、`Rollbackto` 方法，来提供保存点以及回滚至保存点功能，例如：
+
+```go
+tx := db.Begin()
+tx.Create(&user1)
+
+tx.SavePoint("sp1")
+tx.Create(&user2)
+tx.RollbackTo("sp1") // Rollback user2
+
+tx.Commit() // Commit user1
+```
+
