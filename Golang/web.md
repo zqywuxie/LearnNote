@@ -324,3 +324,150 @@ func (h *HandlerBaseOnMap) GetKey(method string, patten string) string {
    > var _ Handler = &HandlerBaseOnMap{}
 
 3. 因为多处使用到了`Route`接口，就提取为一个独立接口
+
+
+
+## 5.错误处理
+
+> 当你怀疑可以用error的时候，就不需要panic
+>
+> 一般情况下，只有快速失败的过程，才会考虑panic。比如服务器启动过程等
+
+常见`errors`错误处理库
+
+```go
+type MyError struct {
+}
+
+func (m *MyError) Error() string {
+	return "自定义error"
+}
+===
+func ErrorsPkg() {
+	myError := &MyError{}
+   // 创建error
+    errors.New()
+    //fmt.Errorf 包装error
+	err := fmt.Errorf("this is an wrapped error %w", myError)
+	//解包
+    err = errors.Unwrap(err)
+	
+    // err会一直解包，所以返回true
+    if errors.Is(err, myError) {
+		fmt.Println("自动解包")
+	}
+
+
+	copyErr := &MyError{}
+	if errors.As(err, &copyErr) {
+		
+	}
+}
+```
+
+## 6.闭包
+
+~~~go
+package main
+
+import "fmt"
+
+func ReturnClosure(name string) func() string {
+	return func() string {
+		return name + "hello"
+	}
+}
+
+//闭包的延时绑定
+func Delay() {
+	fns := make([]func(), 0, 10)
+	for i := 0; i < 10; i++ {
+		fns = append(fns, func() {
+			fmt.Println(i)
+			fmt.Printf("hello,this is %d\n", i)
+		})
+	}
+	for _, fn := range fns {
+		fn()
+	}
+}
+func main() {
+	i := 123
+	a := func() {
+		fmt.Printf("i is %d \n", i)
+	}
+	a()
+	fmt.Println(ReturnClosure("tom")())
+	Delay()
+}
+
+~~~
+
+解释：
+
+1.//闭包的延时绑定，是使用了变量的引用。所以一直输出10
+
+~~~go
+for i := 0; i < 10; i++ {
+    fns = append(fns, func() {
+        // 只是得到了i的引用，所以for结束后，i的引用是10
+        fmt.Println(i)
+        fmt.Printf("hello,this is %d\n", i)
+    })
+}
+~~~
+
+
+
+### AOP：闭包实现责任链
+
+AOP：横向关注点，覆盖多重业务的逻辑：日志，限流等
+
+filter：真正请求前进行拦截掉不需要的东西
+
+
+
+~~~go
+// FilterBuilder 责任链
+type FilterBuilder func(next Filter) Filter
+
+type Filter func(ctx *Context)
+~~~
+
+因为拦截器在接收请求之前就设置了
+
+~~~go
+func NewHttpServer(name string, builders ...FilterBuilder) Server {
+	handler := NewHandlerBaseOnMap()
+	var root Filter = handler.ServeHTTP
+	for i := len(builders) - 1; i >= 0; i-- {
+		b := builders[i]
+		// 形成了一个责任链 filterA(filterB(filterC))
+		//func(func(func()))
+		root = b(root)
+	}
+    // 添加一个root Filter字段，将filerchain根节点传递给它
+	return &sdkHttpServer{Name: name, handler: NewHandlerBaseOnMap(), root: root}
+}
+~~~
+
+然后启动时进行调用filerchain
+
+~~~go
+func (s *sdkHttpServer) Start(address string) error {
+	//http.Handle("/", s.handler)
+	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		c := NewContext(writer, request)
+
+		// 开始执行
+		s.root(c)
+	})
+	return http.ListenAndServe(address, nil)
+}
+~~~
+
+## 7.sync
+
+## 8.路由树
+
+![image-20230502161228795](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/04/14/image-20230502161228795.png)
