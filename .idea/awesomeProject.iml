@@ -9,4 +9,8 @@
       </option>
     </buildTags>
   </component>
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
 </module>
