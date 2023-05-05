@@ -14,12 +14,21 @@ type Server interface {
 	// Start 用户服务器的启动，方便控制生命周期
 	Start(address string) error
 
-	AddRoute(method, path string, handleFunc HandleFunc)
+	addRoute(method, path string, handleFunc HandleFunc)
+
+	findRoute(method, path string) (*node, bool)
 }
 
 var _ Server = &HttpServer{}
 
 type HttpServer struct {
+	router *router
+}
+
+func NewHttpServer() *HttpServer {
+	return &HttpServer{
+		router: newRouter(),
+	}
 }
 
 // ServeHTTP 核心入口
@@ -36,6 +45,13 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func (h *HttpServer) serve(c *Context) {
 	// 查找路由，执行操作
+	n, ok := h.findRoute(c.req.Method, c.req.URL.Path)
+	if !ok || n.handler == nil {
+		c.resp.WriteHeader(http.StatusNotFound)
+		c.resp.Write([]byte("NOT FOUND"))
+		return
+	}
+	n.handler(c)
 }
 func (h *HttpServer) Start(address string) error {
 
@@ -47,11 +63,14 @@ func (h *HttpServer) Start(address string) error {
 // AddRoute 路由注册
 // 这里handleFunc只传入一个，方便进行处理
 // 使用可选参数的话 会考虑到很多问题，并且用户还可能不传参数，编译不会检查到，导致程序出错
-func (h *HttpServer) AddRoute(method, path string, handleFunc HandleFunc) {
-
+func (h *HttpServer) addRoute(method, path string, handleFunc HandleFunc) {
+	h.router.AddRoute(method, path, handleFunc)
+}
+func (h *HttpServer) findRoute(method string, path string) (*node, bool) {
+	return h.router.findRoute(method, path)
 }
 
 // Get 衍生API
 func (h *HttpServer) Get(path string, handleFunc HandleFunc) {
-	h.AddRoute(http.MethodGet, path, handleFunc)
+	h.addRoute(http.MethodGet, path, handleFunc)
 }

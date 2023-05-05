@@ -95,3 +95,93 @@ func (n *node) equal(y *node) (string, bool) {
 	}
 	return "", true
 }
+
+func TestRouter_findRoute(t *testing.T) {
+	testRoutes := []struct {
+		method string
+		path   string
+	}{
+		{
+			method: http.MethodGet,
+			path:   "/",
+		},
+		{
+			method: http.MethodPost,
+			path:   "/order/get",
+		},
+	}
+
+	r := newRouter()
+
+	mockHandler := func(ctx *Context) {}
+
+	for _, t := range testRoutes {
+		r.AddRoute(t.method, t.path, mockHandler)
+	}
+	testCases := []struct {
+		name     string
+		method   string
+		path     string
+		found    bool
+		wantNode *node
+	}{
+		//{
+		//	name:   "method not found",
+		//	method: http.MethodOptions,
+		//	//found: false,
+		//},
+		{
+			name:   "root",
+			method: http.MethodGet,
+			path:   "/",
+			found:  true,
+			wantNode: &node{
+				path:    "/",
+				handler: mockHandler,
+			},
+		},
+		{
+			name:   "first level",
+			method: http.MethodPost,
+			path:   "/order",
+			found:  true,
+			wantNode: &node{
+				path: "order",
+				children: map[string]*node{
+					"get": &node{
+						path:    "get",
+						handler: mockHandler,
+					},
+				},
+			},
+		},
+		{
+			name:   "path not found",
+			method: http.MethodDelete,
+			path:   "/aaaa",
+		},
+		{
+			name:   "leaf",
+			method: http.MethodPost,
+			path:   "/order/get",
+			found:  true,
+			wantNode: &node{
+				path:    "get",
+				handler: mockHandler,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			n, found := r.findRoute(tc.method, tc.path)
+			assert.Equal(t, tc.found, found)
+			if !found {
+				return
+			}
+			//assert.Equal(t, tc.wantNode.children, n.children)
+			msg, Hflag := n.equal(tc.wantNode)
+			assert.True(t, Hflag, msg)
+		})
+	}
+}

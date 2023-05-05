@@ -10,9 +10,11 @@ import (
 )
 
 func TestServer(t *testing.T) {
-	s := &HttpServer{}
+	s := NewHttpServer()
+
 	s.Get("/", func(ctx *Context) {
 		fmt.Println("ok")
+		fmt.Println("ok1")
 	})
 	s.Start(":9090")
 }

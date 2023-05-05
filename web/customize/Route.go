@@ -67,7 +67,6 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 		panic(fmt.Sprintf("web : 路由冲突[%s]", path))
 	}
 	root.handler = handle
-
 }
 
 func (n *node) childCreate(path string) *node {
@@ -83,4 +82,32 @@ func (n *node) childCreate(path string) *node {
 		n.children[path] = child
 	}
 	return child
+}
+
+func (n *node) childOf(path string) (*node, bool) {
+	if n.children == nil {
+		return nil, false
+	}
+	child, ok := n.children[path]
+	return child, ok
+}
+
+func (r *router) findRoute(method string, path string) (*node, bool) {
+	root, ok := r.trees[method]
+	if !ok {
+		return nil, false
+	}
+	//如果是根就直接返回了
+	if path == "/" {
+		return root, true
+	}
+	path = strings.Trim(path, "/")
+	segs := strings.Split(path, "/")
+	for _, s := range segs {
+		root, ok = root.childOf(s)
+		if !ok {
+			return nil, false
+		}
+	}
+	return root, true
 }
