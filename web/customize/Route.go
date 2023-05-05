@@ -76,6 +76,7 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 func (n *node) childCreate(path string) *node {
 
 	if path == "*" {
+		// 避免重复注册
 		if n.starChildren == nil {
 			n.starChildren = &node{
 				path: "*",
@@ -99,6 +100,8 @@ func (n *node) childCreate(path string) *node {
 
 // 判断是否节点是否存在
 func (n *node) childOf(path string) (*node, bool) {
+
+	// 如果子节点不存在，或者静态匹配不成功 都查看通配符是否存在
 	if n.children == nil {
 		return n.starChildren, n.starChildren != nil
 	}
