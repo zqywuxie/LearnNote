@@ -12,7 +12,11 @@ import (
 type node struct {
 	// children path => node
 	children map[string]*node
-	path     string
+
+	// 通配符匹配
+	starChildren *node
+
+	path string
 
 	// 到达叶子节点才执行
 	handler HandleFunc
@@ -71,6 +75,15 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 
 func (n *node) childCreate(path string) *node {
 
+	if path == "*" {
+		if n.starChildren == nil {
+			n.starChildren = &node{
+				path: "*",
+			}
+		}
+		return n.starChildren
+	}
+
 	// 不存在子树就新建
 	if n.children == nil {
 		n.children = make(map[string]*node)
@@ -84,11 +97,16 @@ func (n *node) childCreate(path string) *node {
 	return child
 }
 
+// 判断是否节点是否存在
 func (n *node) childOf(path string) (*node, bool) {
 	if n.children == nil {
-		return nil, false
+		return n.starChildren, n.starChildren != nil
 	}
 	child, ok := n.children[path]
+	// 优先静态匹配，没有就返回通配符匹配
+	if !ok {
+		return n.starChildren, n.starChildren != nil
+	}
 	return child, ok
 }
 

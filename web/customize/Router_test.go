@@ -101,13 +101,37 @@ func TestRouter_findRoute(t *testing.T) {
 		method string
 		path   string
 	}{
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/",
+		//},
+		//{
+		//	method: http.MethodPost,
+		//	path:   "/order/get",
+		//},
 		{
 			method: http.MethodGet,
-			path:   "/",
+			path:   "/order/*",
 		},
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/*",
+		//},
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/*/*",
+		//},
 		{
-			method: http.MethodPost,
-			path:   "/order/get",
+			method: http.MethodGet,
+			path:   "/*/abc",
+		},
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/*/abc/*",
+		//},
+		{
+			method: http.MethodGet,
+			path:   "/user/*/home",
 		},
 	}
 
@@ -142,7 +166,7 @@ func TestRouter_findRoute(t *testing.T) {
 		},
 		{
 			name:   "first level",
-			method: http.MethodPost,
+			method: http.MethodGet,
 			path:   "/order",
 			found:  true,
 			wantNode: &node{
@@ -156,17 +180,42 @@ func TestRouter_findRoute(t *testing.T) {
 			},
 		},
 		{
-			name:   "path not found",
-			method: http.MethodDelete,
-			path:   "/aaaa",
+			name:   "leaf",
+			method: http.MethodGet,
+			path:   "/xx/abc",
+			found:  true,
+			wantNode: &node{
+				path:    "abc",
+				handler: mockHandler,
+			},
 		},
 		{
 			name:   "leaf",
-			method: http.MethodPost,
-			path:   "/order/get",
+			method: http.MethodGet,
+			path:   "/user/tom/home",
 			found:  true,
 			wantNode: &node{
-				path:    "get",
+				path:    "home",
+				handler: mockHandler,
+			},
+		},
+		{
+			name:   "/order/*",
+			method: http.MethodGet,
+			path:   "/order/delete",
+			found:  true,
+			wantNode: &node{
+				path:    "*",
+				handler: mockHandler,
+			},
+		},
+		{
+			name:   "/user/*/help",
+			method: http.MethodGet,
+			path:   "/user/tome/help",
+			found:  true,
+			wantNode: &node{
+				path:    "help",
 				handler: mockHandler,
 			},
 		},
