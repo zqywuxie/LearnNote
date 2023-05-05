@@ -16,10 +16,17 @@ type node struct {
 	// 通配符匹配
 	starChildren *node
 
+	paramChildren *node
+
 	path string
 
 	// 到达叶子节点才执行
 	handler HandleFunc
+}
+
+type matchInfo struct {
+	n         *node
+	pathParam map[string]string
 }
 
 type router struct {
@@ -75,8 +82,26 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 
 func (n *node) childCreate(path string) *node {
 
+	if path[0] == ':' {
+		if n.starChildren != nil {
+			panic(fmt.Sprintf("web：非法路由,不允许同时注册（通配符)"))
+		}
+		if n.paramChildren != nil {
+			panic(fmt.Sprintf("web：路由冲突"))
+		} else {
+			n.paramChildren = &node{
+				path: path[1:],
+			}
+		}
+		return n.paramChildren
+	}
+
 	if path == "*" {
 		// 避免重复注册
+		if n.paramChildren != nil {
+			panic(fmt.Sprintf("web：非法路由,不允许同时注册（参数路径)"))
+		}
+
 		if n.starChildren == nil {
 			n.starChildren = &node{
 				path: "*",
@@ -99,36 +124,56 @@ func (n *node) childCreate(path string) *node {
 }
 
 // 判断是否节点是否存在
-func (n *node) childOf(path string) (*node, bool) {
+// 第一个bool 判断参数是否命中
+// 第二个bool 判断是否存在节点
+func (n *node) childOf(path string) (*node, bool, bool) {
 
 	// 如果子节点不存在，或者静态匹配不成功 都查看通配符是否存在
 	if n.children == nil {
-		return n.starChildren, n.starChildren != nil
+		if n.paramChildren != nil {
+			return n.paramChildren, true, true
+		}
+		return n.starChildren, false, n.starChildren != nil
 	}
 	child, ok := n.children[path]
 	// 优先静态匹配，没有就返回通配符匹配
 	if !ok {
-		return n.starChildren, n.starChildren != nil
+		if n.paramChildren != nil {
+			return n.paramChildren, true, true
+		}
+		return n.starChildren, false, n.starChildren != nil
 	}
-	return child, ok
+	return child, false, ok
 }
 
-func (r *router) findRoute(method string, path string) (*node, bool) {
+func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	root, ok := r.trees[method]
 	if !ok {
 		return nil, false
 	}
 	//如果是根就直接返回了
 	if path == "/" {
-		return root, true
+		return &matchInfo{n: root}, true
 	}
 	path = strings.Trim(path, "/")
 	segs := strings.Split(path, "/")
+
+	// 创建matchInfo
+	var pathParams map[string]string
 	for _, s := range segs {
-		root, ok = root.childOf(s)
+		var paramOk bool
+		root, paramOk, ok = root.childOf(s)
 		if !ok {
 			return nil, false
 		}
+		if paramOk {
+			pathParams = make(map[string]string)
+			pathParams[root.path] = s
+		}
 	}
-	return root, true
+	mi := &matchInfo{
+		n:         root,
+		pathParam: pathParams,
+	}
+	return mi, true
 }

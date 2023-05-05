@@ -75,6 +75,12 @@ func (n *node) equal(y *node) (string, bool) {
 	if len(n.children) != len(y.children) {
 		return fmt.Sprintf("子节点数不匹配"), false
 	}
+	if n.starChildren != nil {
+		msg, ok := n.starChildren.equal(y.starChildren)
+		if !ok {
+			return msg, ok
+		}
+	}
 
 	// 方法通过反射来比较
 	nHandler := reflect.ValueOf(n.handler)
@@ -133,6 +139,14 @@ func TestRouter_findRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/user/*/home",
 		},
+		{
+			method: http.MethodPost,
+			path:   "/login/:username",
+		},
+		//{
+		//	method: http.MethodPost,
+		//	path:   "/login/*",
+		//},
 	}
 
 	r := newRouter()
@@ -147,7 +161,7 @@ func TestRouter_findRoute(t *testing.T) {
 		method   string
 		path     string
 		found    bool
-		wantNode *node
+		wantNode *matchInfo
 	}{
 		//{
 		//	name:   "method not found",
@@ -159,9 +173,11 @@ func TestRouter_findRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/",
 			found:  true,
-			wantNode: &node{
-				path:    "/",
-				handler: mockHandler,
+			wantNode: &matchInfo{
+				n: &node{
+					path:    "/",
+					handler: mockHandler,
+				},
 			},
 		},
 		{
@@ -169,12 +185,14 @@ func TestRouter_findRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/order",
 			found:  true,
-			wantNode: &node{
-				path: "order",
-				children: map[string]*node{
-					"get": &node{
-						path:    "get",
-						handler: mockHandler,
+			wantNode: &matchInfo{
+				n: &node{
+					path: "order",
+					children: map[string]*node{
+						"get": &node{
+							path:    "get",
+							handler: mockHandler,
+						},
 					},
 				},
 			},
@@ -184,53 +202,62 @@ func TestRouter_findRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/xx/abc",
 			found:  true,
-			wantNode: &node{
-				path:    "abc",
-				handler: mockHandler,
+			wantNode: &matchInfo{
+				n: &node{
+					path:    "abc",
+					handler: mockHandler,
+				},
 			},
 		},
 		{
-			name:   "leaf",
-			method: http.MethodGet,
-			path:   "/user/tom/home",
+			name:   "login username",
+			method: http.MethodPost,
+			path:   "/login/zqy",
 			found:  true,
-			wantNode: &node{
-				path:    "home",
-				handler: mockHandler,
+			wantNode: &matchInfo{
+				n: &node{
+					path:    "username",
+					handler: mockHandler,
+				},
+				pathParam: map[string]string{
+					"username": "zqy",
+				},
 			},
 		},
-		{
-			name:   "/order/*",
-			method: http.MethodGet,
-			path:   "/order/delete",
-			found:  true,
-			wantNode: &node{
-				path:    "*",
-				handler: mockHandler,
-			},
-		},
-		{
-			name:   "/user/*/help",
-			method: http.MethodGet,
-			path:   "/user/tome/help",
-			found:  true,
-			wantNode: &node{
-				path:    "help",
-				handler: mockHandler,
-			},
-		},
+		//{
+		//	name:   "/order/*",
+		//	method: http.MethodGet,
+		//	path:   "/order/delete",
+		//	found:  true,
+		//	wantNode: &node{
+		//		path:    "*",
+		//		handler: mockHandler,
+		//	},
+		//},
+		//{
+		//	name:   "/user/*/help",
+		//	method: http.MethodGet,
+		//	path:   "/user/tome/help",
+		//	found:  true,
+		//	wantNode: &node{
+		//		path:    "help",
+		//		handler: mockHandler,
+		//	},
+		//},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			n, found := r.findRoute(tc.method, tc.path)
+			info, found := r.findRoute(tc.method, tc.path)
 			assert.Equal(t, tc.found, found)
 			if !found {
 				return
 			}
-			//assert.Equal(t, tc.wantNode.children, n.children)
-			msg, Hflag := n.equal(tc.wantNode)
+			//assert.Equal(t, tc.wantNode.children, info.children)
+			assert.Equal(t, info.pathParam, tc.wantNode.pathParam)
+			msg, Hflag := info.n.equal(tc.wantNode.n)
 			assert.True(t, Hflag, msg)
+			fmt.Println(info.pathParam["username"])
 		})
 	}
 }

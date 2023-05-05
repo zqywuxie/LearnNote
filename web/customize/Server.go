@@ -16,7 +16,7 @@ type Server interface {
 
 	addRoute(method, path string, handleFunc HandleFunc)
 
-	findRoute(method, path string) (*node, bool)
+	findRoute(method, path string) (*matchInfo, bool)
 }
 
 var _ Server = &HttpServer{}
@@ -45,13 +45,14 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func (h *HttpServer) serve(c *Context) {
 	// 查找路由，执行操作
-	n, ok := h.findRoute(c.req.Method, c.req.URL.Path)
-	if !ok || n.handler == nil {
+	info, ok := h.findRoute(c.req.Method, c.req.URL.Path)
+	if !ok || info.n.handler == nil {
 		c.resp.WriteHeader(http.StatusNotFound)
 		c.resp.Write([]byte("NOT FOUND"))
 		return
 	}
-	n.handler(c)
+	c.pathParams = info.pathParam
+	info.n.handler(c)
 }
 func (h *HttpServer) Start(address string) error {
 
@@ -66,7 +67,7 @@ func (h *HttpServer) Start(address string) error {
 func (h *HttpServer) addRoute(method, path string, handleFunc HandleFunc) {
 	h.router.AddRoute(method, path, handleFunc)
 }
-func (h *HttpServer) findRoute(method string, path string) (*node, bool) {
+func (h *HttpServer) findRoute(method string, path string) (*matchInfo, bool) {
 	return h.router.findRoute(method, path)
 }
 
