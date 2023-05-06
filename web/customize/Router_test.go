@@ -115,10 +115,10 @@ func TestRouter_findRoute(t *testing.T) {
 		//	method: http.MethodPost,
 		//	path:   "/order/get",
 		//},
-		{
-			method: http.MethodGet,
-			path:   "/order/*",
-		},
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/order/*",
+		//},
 		//{
 		//	method: http.MethodGet,
 		//	path:   "/*",
@@ -127,21 +127,25 @@ func TestRouter_findRoute(t *testing.T) {
 		//	method: http.MethodGet,
 		//	path:   "/*/*",
 		//},
-		{
-			method: http.MethodGet,
-			path:   "/*/abc",
-		},
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/*/abc",
+		//},
 		//{
 		//	method: http.MethodGet,
 		//	path:   "/*/abc/*",
 		//},
-		{
-			method: http.MethodGet,
-			path:   "/user/*/home",
-		},
+		//{
+		//	method: http.MethodGet,
+		//	path:   "/user/*/home",
+		//},
+		//{
+		//	method: http.MethodPost,
+		//	path:   "/login/:username",
+		//},
 		{
 			method: http.MethodPost,
-			path:   "/login/:username",
+			path:   "/logout/:id(^\\d{4}$)",
 		},
 		//{
 		//	method: http.MethodPost,
@@ -221,6 +225,21 @@ func TestRouter_findRoute(t *testing.T) {
 				},
 				pathParam: map[string]string{
 					"username": "zqy",
+				},
+			},
+		},
+		{
+			name:   "reg logout",
+			method: http.MethodPost,
+			path:   "/logout/1234",
+			found:  true,
+			wantNode: &matchInfo{
+				pathParam: map[string]string{
+					"id": "1234",
+				},
+				n: &node{
+					path:    ":id(^\\d{4}$)",
+					handler: mockHandler,
 				},
 			},
 		},

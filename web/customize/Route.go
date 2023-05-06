@@ -6,9 +6,20 @@ package customize
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
+type nodeType int
+
+const (
+	nodeTypeAny = iota
+	nodeTypeParam
+	nodeTypeReg
+	nodeTypeStatic
+)
+
+// 静态 > 正则 > 路径参数 > 通配符
 type node struct {
 	// children path => node
 	children map[string]*node
@@ -18,10 +29,18 @@ type node struct {
 
 	paramChildren *node
 
+	// 正则匹配
+	regChildren *node
+	regExpr     *regexp.Regexp
+
+	//参数key
+	paramName string
+
 	path string
 
 	// 到达叶子节点才执行
 	handler HandleFunc
+	typ     int
 }
 
 type matchInfo struct {
@@ -78,22 +97,18 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 		panic(fmt.Sprintf("web : 路由冲突[%s]", path))
 	}
 	root.handler = handle
+
 }
 
 func (n *node) childCreate(path string) *node {
 
 	if path[0] == ':' {
-		if n.starChildren != nil {
-			panic(fmt.Sprintf("web：非法路由,不允许同时注册（通配符)"))
-		}
-		if n.paramChildren != nil {
-			panic(fmt.Sprintf("web：路由冲突"))
+		paramName, reg, ok := n.parseParam(path)
+		if !ok {
+			return n.childOrCreateParam(path[1:], paramName)
 		} else {
-			n.paramChildren = &node{
-				path: path[1:],
-			}
+			return n.childOrCreateReg(path, paramName, reg)
 		}
-		return n.paramChildren
 	}
 
 	if path == "*" {
@@ -105,6 +120,7 @@ func (n *node) childCreate(path string) *node {
 		if n.starChildren == nil {
 			n.starChildren = &node{
 				path: "*",
+				typ:  nodeTypeAny,
 			}
 		}
 		return n.starChildren
@@ -117,35 +133,98 @@ func (n *node) childCreate(path string) *node {
 	child, ok := n.children[path]
 
 	if !ok {
-		child = &node{path: path}
+		child = &node{
+			path: path,
+			typ:  nodeTypeStatic,
+		}
 		n.children[path] = child
 	}
 	return child
 }
 
+func (n *node) childOrCreateParam(path, paramName string) *node {
+	if n.starChildren != nil || n.regChildren != nil {
+		panic(fmt.Sprintf("web：非法路由,不允许同时注册（通配符,正则)"))
+	}
+	if n.paramChildren != nil {
+		panic(fmt.Sprintf("web：路由冲突"))
+	}
+
+	n.paramChildren = &node{
+		path:      path,
+		paramName: paramName,
+		typ:       nodeTypeParam,
+	}
+	return n.paramChildren
+}
+
+func (n *node) childOrCreateReg(path, paramName, reg string) *node {
+	if n.starChildren != nil || n.paramChildren != nil {
+		panic(fmt.Sprintf("web：非法路由,不允许同时注册（通配符,参数路径)"))
+	}
+	if n.regChildren != nil {
+		// 判断是否存在
+		if n.regChildren.regExpr.String() != reg || n.paramName != paramName {
+			panic(fmt.Sprintf("web：路由冲突"))
+		}
+	} else {
+		compile, err := regexp.Compile(reg)
+		if err != nil {
+			panic(fmt.Sprintf("正则表达式错误"))
+		}
+		n.regChildren = &node{
+			path:      path,
+			paramName: paramName,
+			regExpr:   compile,
+			typ:       nodeTypeReg,
+		}
+	}
+	return n.regChildren
+}
+func (n *node) parseParam(path string) (string, string, bool) {
+	// 去除:
+	path = path[1:]
+	segs := strings.SplitN(path, "(", 2)
+	// /:id(xxx)
+	if len(segs) == 2 {
+		expr := segs[1]
+		if strings.HasSuffix(expr, ")") {
+			return segs[0], expr[:len(expr)-1], true
+		}
+	}
+	return path, "", false
+}
+
 // 判断是否节点是否存在
 // 第一个bool 判断参数是否命中
 // 第二个bool 判断是否存在节点
-func (n *node) childOf(path string) (*node, bool, bool) {
+func (n *node) childOf(path string) (*node, bool) {
 
 	// 如果子节点不存在，或者静态匹配不成功 都查看通配符是否存在
 	if n.children == nil {
-		if n.paramChildren != nil {
-			return n.paramChildren, true, true
-		}
-		return n.starChildren, false, n.starChildren != nil
+		return n.childOfNoStatic(path)
 	}
 	child, ok := n.children[path]
 	// 优先静态匹配，没有就返回通配符匹配
 	if !ok {
-		if n.paramChildren != nil {
-			return n.paramChildren, true, true
-		}
-		return n.starChildren, false, n.starChildren != nil
+		return n.childOfNoStatic(path)
 	}
-	return child, false, ok
+	return child, ok
 }
+func (n *node) childOfNoStatic(path string) (*node, bool) {
+	if n.regChildren != nil {
+		// 如果匹配成功 就返回节点
+		if n.regChildren.regExpr.MatchString(path) {
+			return n.regChildren, true
+		}
+	}
 
+	if n.paramChildren != nil {
+		return n.paramChildren, true
+	}
+	// 最后返回通配符匹配
+	return n.starChildren, n.starChildren != nil
+}
 func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	root, ok := r.trees[method]
 	if !ok {
@@ -160,20 +239,28 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 
 	// 创建matchInfo
 	var pathParams map[string]string
+	mi := &matchInfo{}
+	//child := root
 	for _, s := range segs {
-		var paramOk bool
-		root, paramOk, ok = root.childOf(s)
+		//var paramOk bool
+		child, ok := root.childOf(s)
 		if !ok {
+			// 如果最后节点是通配符匹配
+			// todo 注意这里的root还是child
+			if root.typ == nodeTypeAny {
+				mi.n = root
+				// todo 直接返回？
+				return mi, true
+			}
 			return nil, false
 		}
-		if paramOk {
+		if child.paramName != "" {
 			pathParams = make(map[string]string)
-			pathParams[root.path] = s
+			pathParams[child.paramName] = s
 		}
+		root = child
 	}
-	mi := &matchInfo{
-		n:         root,
-		pathParam: pathParams,
-	}
+	mi.n = root
+	mi.pathParam = pathParams
 	return mi, true
 }

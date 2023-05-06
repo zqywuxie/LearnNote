@@ -1,22 +1,50 @@
-容器技术：
+web：
 
-- Docker 
-  - 资料：[开发者必备的 Docker 实践指南 - 有明 - 掘金小册 (juejin.cn)](https://juejin.cn/book/6844733746462064654?enter_from=course_center&utm_source=course_center)（付费，一般)
-  - [使用 Dockerfile 定制镜像 - Docker — 从入门到实践 (gitbook.io)](https://yeasy.gitbook.io/docker_practice/image/build) (免费，尚可)
+自定义web框架，目前功能
+
+- 路由树的查找和注册（静态匹配，通配符匹配，参数路径匹配）
+- http.ListenAndServe自定义
 
 
 
-后端：
+路由树的总结
 
-- Java
-  - spring
-    - 资料：[从 0 开始深入学习 Spring - LinkedBear - 掘金小册 (juejin.cn)](https://juejin.cn/book/6857911863016390663?enter_from=course_center&utm_source=course_center)（付费，较多）
-    - 视频：尚硅谷spring6源码解析
-- Golang
-  - golang
-    - 资料：[前景-地鼠文档 (topgoer.cn)](https://www.topgoer.cn/docs/golang/golang-1ccjbpfstsfi1)
-  - gorm（数据库操作）
-    - 资料：[概述-地鼠文档 (topgoer.cn)](https://www.topgoer.cn/docs/gorm/gorm-1c54sbcda16o6)
-    - 官方文档：[查询 | GORM - The fantastic ORM library for Golang, aims to be developer friendly.](https://gorm.io/zh_CN/docs/query.html)
-- Netty仿Wechat即时通信系统
-  - 资料：[Netty 入门与实战：仿写微信 IM 即时通讯系统 - 闪电侠 - 掘金小册 (juejin.cn)](https://juejin.cn/book/6844733738119593991?enter_from=course_center&utm_source=course_center)
+注意事项
+
+- 已经注册的路由，无法被覆盖，提示冲突
+- path必须以/ 开始，结尾不能有/，中间不允许连续的/
+- 同一个位置注册不同的参数路径,eg：/user/:username,/user/:id冲突
+- 不能同一个位置同时注册参数路径和通配符路径
+- 同名路径参数，在路由匹配时值被覆盖 /user/:id/abc/:id，/user/23/ab/34，最后id是34
+
+为什么使用panic而不是error
+
+- error需要用户去解决，麻烦
+- 一般来讲，用户需要注册好路由后才能正常启动服务器，所以panic可以避免服务器启动后再发现错误。
+
+路由树是线程安全的吗
+
+不是线程安全的，因为map只是简单的类型，而不是sync.map，操作也没有进行锁的管理。
+
+但我们启动服务器之前是依次注册路由，后续只会产生并发读是没有危险的。并发读写才会导致线程不安全
+
+面试要点
+
+- 性能受到什么影响:树的高度和宽度(如果子节点树用map，倒不用考虑，查找很快)
+
+
+
+优化：
+
+功能需求：
+
+- 路由打印功能
+- 路由测试功能，在不启动服务器时候，判断某个路径是否匹配某个路由
+
+非功能需求：
+
+- 性能：查找路由性能必须好，提供基准测试数据
+- 拓展性：不支持开发者自定义路由匹配逻辑
+- 安全性：检测开发者注册的路由，不符合条件或存在冲突就报错
+- 文档：提供详细文档和错误排查手册
+
