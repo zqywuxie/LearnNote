@@ -75,3 +75,8 @@ func (h *HttpServer) findRoute(method string, path string) (*matchInfo, bool) {
 func (h *HttpServer) Get(path string, handleFunc HandleFunc) {
 	h.addRoute(http.MethodGet, path, handleFunc)
 }
+
+// Post  衍生API
+func (h *HttpServer) Post(path string, handleFunc HandleFunc) {
+	h.addRoute(http.MethodPost, path, handleFunc)
+}

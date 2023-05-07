@@ -16,5 +16,11 @@ func TestServer(t *testing.T) {
 		fmt.Println("ok")
 		fmt.Println("ok1")
 	})
+	s.Post("/Form", func(ctx *Context) {
+		// PostForm
+		ctx.req.ParseForm()
+		ctx.resp.Write([]byte(ctx.req.URL.Path))
+	})
+
 	s.Start(":9090")
 }

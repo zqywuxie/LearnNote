@@ -238,7 +238,7 @@ func TestRouter_findRoute(t *testing.T) {
 					"id": "1234",
 				},
 				n: &node{
-					path:    ":id(^\\d{4}$)",
+					path:    "id(^\\d{4}$)",
 					handler: mockHandler,
 				},
 			},

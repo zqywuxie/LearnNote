@@ -173,7 +173,7 @@ func (n *node) childOrCreateReg(path, paramName, reg string) *node {
 			panic(fmt.Sprintf("正则表达式错误"))
 		}
 		n.regChildren = &node{
-			path:      path,
+			path:      path[1:],
 			paramName: paramName,
 			regExpr:   compile,
 			typ:       nodeTypeReg,
