@@ -6,6 +6,7 @@ package customize
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 )
 
@@ -35,4 +36,35 @@ func TestServer(t *testing.T) {
 	})
 
 	s.Start(":9090")
+}
+
+func TestHttpServer_ServeHTTP(t *testing.T) {
+	server := NewHttpServer()
+	server.middleWare = []MiddleWare{
+		func(next HandleFunc) HandleFunc {
+			return func(ctx *Context) {
+				fmt.Println("第一个before")
+				next(ctx)
+				fmt.Println("第一个after")
+			}
+		},
+		func(next HandleFunc) HandleFunc {
+			return func(ctx *Context) {
+				fmt.Println("第二个before")
+				next(ctx)
+				fmt.Println("第二个after")
+			}
+		},
+		func(next HandleFunc) HandleFunc {
+			return func(ctx *Context) {
+				fmt.Println("第三个中断")
+			}
+		},
+		func(next HandleFunc) HandleFunc {
+			return func(ctx *Context) {
+				fmt.Println("第四个看不到")
+			}
+		},
+	}
+	server.ServeHTTP(nil, &http.Request{})
 }

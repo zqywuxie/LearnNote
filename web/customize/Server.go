@@ -13,7 +13,8 @@ type Server interface {
 	http.Handler
 	// Start 用户服务器的启动，方便控制生命周期
 	Start(address string) error
-
+	//router
+	//
 	addRoute(method, path string, handleFunc HandleFunc)
 
 	findRoute(method, path string) (*matchInfo, bool)
@@ -22,7 +23,8 @@ type Server interface {
 var _ Server = &HttpServer{}
 
 type HttpServer struct {
-	router *router
+	*router
+	middleWare []MiddleWare
 }
 
 func NewHttpServer() *HttpServer {
@@ -41,7 +43,14 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp: w,
 	}
 
-	h.serve(c)
+	root := h.serve
+	// 从后向前进行组装链条
+	//root = func(func(h.serve(c *Context)))
+	for i := len(h.middleWare) - 1; i >= 0; i-- {
+		root = h.middleWare[i](root)
+	}
+	// 所以最后执行root 就是从前往后了
+	root(c)
 }
 func (h *HttpServer) serve(c *Context) {
 	// 查找路由，执行操作
