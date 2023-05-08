@@ -7,9 +7,11 @@ package customize
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 )
 
 // Context
@@ -27,11 +29,64 @@ type Context struct {
 	resp        http.ResponseWriter
 	pathParams  map[string]string
 	queryValues url.Values
+	// cookie的默认配置
+	//cookieSameSite http.SameSite
+}
+
+type SafeContext struct {
+	context *Context
+	mutex   sync.Mutex
+}
+
+// 关于使用泛型,以下都会编译错误
+/*
+	func (s StringValue) As[T any]() (T, error) {
+
+}
+	func (s StringValue[T]) As() (error, T) {
+
+}
+*/
+type StringValue struct {
+	string
+	error
 }
 
 var (
 	JSONUseNumber = true
 )
+
+// RespJson 如果val已经是string或者[]byte，就不需要进行转换了
+func (c *Context) RespJson(status int, val any) error {
+	resj, err := json.Marshal(val)
+	if err != nil {
+		return err
+	}
+	c.resp.WriteHeader(status)
+	// 可以在此进行完善
+	c.resp.Header().Set("Content-Type", "application/json")
+
+	// 直接返回页面了 不需要判断err了
+	_, err = c.resp.Write(resj)
+	return err
+}
+
+// RespJsonOK Api渲染
+func (c *SafeContext) RespJsonOK(val any) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.context.RespJson(http.StatusOK, val)
+}
+
+// 可以直接使用http.SetCookie
+func (c *Context) setCookie(ck *http.Cookie) {
+	http.SetCookie(c.resp, ck)
+}
+
+// ErrorPage 关于错误重定向,每次都要用户进行判断调用,会很麻烦,交给后续的AOP进行处理
+func (c *Context) ErrorPage() {
+
+}
 
 // BindJson 将HTTP请求的json数据绑定到一个对象模型上
 func (c *Context) BindJson(val any) error {
@@ -70,11 +125,6 @@ func (c *Context) FormValue(key string) (string, error) {
 		return "", err
 	}
 	return c.req.FormValue(key), nil
-}
-
-type StringValue struct {
-	string
-	error
 }
 
 // QueryValue 获得查询参数
@@ -124,6 +174,13 @@ func (s StringValue) AsInt64() (int64, error) {
 	}
 	return strconv.ParseInt(s.string, 10, 64)
 }
-func (c *Context) test() {
-	asInt64, err := c.PathValueAsString("123").AsInt64()
+
+func printslice[T any](s []T) { //[T any]表示支持任何类型的参数  （s []T表示形参s是一个T类型的切片）
+	for _, v := range s {
+		fmt.Printf("%v\n", v)
+	}
 }
+
+//func (c *Context) test() {
+//	asInt64, err := c.PathValueAsString("123").AsInt64()
+//}
