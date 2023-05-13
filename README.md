@@ -4,6 +4,10 @@ web：
 
 - 路由树的查找和注册（静态匹配，通配符匹配，参数路径匹配）
 - http.ListenAndServe自定义
+- middleware设计
+  - logserver
+  - tracing（openTelemetry整合zipkin)
+
 
 
 
