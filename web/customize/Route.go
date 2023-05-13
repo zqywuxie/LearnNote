@@ -36,6 +36,8 @@ type node struct {
 	//参数key
 	paramName string
 
+	route string
+
 	path string
 
 	// 到达叶子节点才执行
@@ -83,6 +85,7 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 			panic("web : 路由冲突")
 		}
 		root.handler = handle
+		root.route = "/"
 		return
 	}
 	// /user/login => 空，user,login
@@ -97,6 +100,9 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 		panic(fmt.Sprintf("web : 路由冲突[%s]", path))
 	}
 	root.handler = handle
+
+	// route 获得完整匹配路径
+	root.route = path
 
 }
 

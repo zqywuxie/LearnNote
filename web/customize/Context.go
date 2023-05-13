@@ -25,12 +25,21 @@ http.ResponseWriter只需要实现一些方法来写入响应正文到客户端�
 因此使用一个接口来表示响应处理器更加灵活。
 */
 type Context struct {
-	req         *http.Request
-	resp        http.ResponseWriter
+	Req *http.Request
+
+	// Resp 直接使用这个，就少了code/data，有些中间件就无法正常运转
+	// 如tracing追踪路径，但对于某一阶段的响应不知道，就失去了一定的作用
+	Resp http.ResponseWriter
+
+	RespData    []byte
+	RespCode    int
 	pathParams  map[string]string
 	queryValues url.Values
 	// cookie的默认配置
 	//cookieSameSite http.SameSite
+
+	// 新增字段获得匹配路径
+	MatchedRoute string
 }
 
 type SafeContext struct {
@@ -62,12 +71,14 @@ func (c *Context) RespJson(status int, val any) error {
 	if err != nil {
 		return err
 	}
-	c.resp.WriteHeader(status)
+	//c.Resp.WriteHeader(status)
+	c.RespCode = status
+	//fmt.Println(c.RespCode)
 	// 可以在此进行完善
-	c.resp.Header().Set("Content-Type", "application/json")
 
 	// 直接返回页面了 不需要判断err了
-	_, err = c.resp.Write(resj)
+	//_, err = c.Resp.Write(resj)
+	c.RespData = resj
 	return err
 }
 
@@ -80,7 +91,7 @@ func (c *SafeContext) RespJsonOK(val any) error {
 
 // 可以直接使用http.SetCookie
 func (c *Context) setCookie(ck *http.Cookie) {
-	http.SetCookie(c.resp, ck)
+	http.SetCookie(c.Resp, ck)
 }
 
 // ErrorPage 关于错误重定向,每次都要用户进行判断调用,会很麻烦,交给后续的AOP进行处理
@@ -93,11 +104,11 @@ func (c *Context) BindJson(val any) error {
 	if val == nil {
 		return errors.New("web:输入内容不能为nil")
 	}
-	if c.req.Body == nil {
+	if c.Req.Body == nil {
 		return errors.New("web:body 为 nil")
 	}
 
-	decoder := json.NewDecoder(c.req.Body)
+	decoder := json.NewDecoder(c.Req.Body)
 
 	// 数组使用Number类型 -> string
 	// 默认为float64
@@ -120,16 +131,16 @@ func (c *Context) BindJson(val any) error {
 // 不打算提供其他数据类型的方法，因为数据类型较多，让用户自己进行转换
 // func (c *Context) FormValueInt64(key string) (string, error)
 func (c *Context) FormValue(key string) (string, error) {
-	err := c.req.ParseForm()
+	err := c.Req.ParseForm()
 	if err != nil {
 		return "", err
 	}
-	return c.req.FormValue(key), nil
+	return c.Req.FormValue(key), nil
 }
 
 // QueryValue 获得查询参数
 func (c *Context) QueryValue(key string) (string, error) {
-	//query := c.req.URL.Query()
+	//query := c.Req.URL.Query()
 	// 这里不能进行如上判断非空，查看源码得,每次都会进行ParseQuery，并且make，没有像form进行缓存
 	/*
 		func ParseQuery(query string) (Values, error) {
@@ -139,7 +150,7 @@ func (c *Context) QueryValue(key string) (string, error) {
 		}
 	*/
 	if c.queryValues == nil {
-		c.queryValues = c.req.URL.Query()
+		c.queryValues = c.Req.URL.Query()
 	}
 	value, ok := c.queryValues[key]
 	if !ok {

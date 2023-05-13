@@ -4,7 +4,11 @@
 
 package customize
 
-import "net/http"
+import (
+	"fmt"
+
+	"net/http"
+)
 
 type HandleFunc func(ctx *Context)
 
@@ -23,13 +27,30 @@ type Server interface {
 var _ Server = &HttpServer{}
 
 type HttpServer struct {
+	//route.
 	*router
+	log        func(msg string, args ...any)
 	middleWare []MiddleWare
 }
+type HTTPServerOption func(server *HttpServer)
 
-func NewHttpServer() *HttpServer {
-	return &HttpServer{
+func NewHttpServer(opts ...HTTPServerOption) *HttpServer {
+	res := &HttpServer{
 		router: newRouter(),
+		log: func(msg string, args ...any) {
+			fmt.Printf(msg, args...)
+		},
+	}
+
+	for _, opt := range opts {
+		opt(res)
+	}
+	return res
+}
+
+func ServerWithMiddleWare(mdls ...MiddleWare) HTTPServerOption {
+	return func(server *HttpServer) {
+		server.middleWare = mdls
 	}
 }
 
@@ -39,8 +60,8 @@ func NewHttpServer() *HttpServer {
 // 执行业务逻辑
 func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := &Context{
-		req:  r,
-		resp: w,
+		Req:  r,
+		Resp: w,
 	}
 
 	root := h.serve
@@ -49,18 +70,45 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for i := len(h.middleWare) - 1; i >= 0; i-- {
 		root = h.middleWare[i](root)
 	}
+	//进行状态数据的刷新
+
+	var m MiddleWare = func(next HandleFunc) HandleFunc {
+		return func(ctx *Context) {
+			next(ctx)
+			h.flashResp(ctx)
+		}
+	}
+
+	// 最先执行，然后不断执行middleware，最后返回的时候刷新状态
+	root = m(root)
 	// 所以最后执行root 就是从前往后了
 	root(c)
 }
+
+func (h *HttpServer) flashResp(ctx *Context) {
+	if ctx.RespCode != 0 {
+		ctx.Resp.WriteHeader(ctx.RespCode)
+	}
+	ctx.Resp.Header().Set("Content-Type", "application/json")
+
+	write, err := ctx.Resp.Write(ctx.RespData)
+	if err != nil || write != len(ctx.RespData) {
+		//return
+		//log.Fatal(err)
+		h.log("错误信息%v", err)
+	}
+}
 func (h *HttpServer) serve(c *Context) {
 	// 查找路由，执行操作
-	info, ok := h.findRoute(c.req.Method, c.req.URL.Path)
+	info, ok := h.findRoute(c.Req.Method, c.Req.URL.Path)
 	if !ok || info.n.handler == nil {
-		c.resp.WriteHeader(http.StatusNotFound)
-		c.resp.Write([]byte("NOT FOUND"))
+		//c.Resp.WriteHeader(http.StatusNotFound)
+		c.RespCode = http.StatusNotFound
+		c.RespData = []byte("NOT FOUND")
 		return
 	}
 	c.pathParams = info.pathParam
+	c.MatchedRoute = info.n.route
 	info.n.handler(c)
 }
 func (h *HttpServer) Start(address string) error {

@@ -19,19 +19,19 @@ func TestServer(t *testing.T) {
 	//})
 	s.Post("/Form", func(ctx *Context) {
 		// PostForm
-		//ctx.req.ParseForm()
+		//ctx.Req.ParseForm()
 		//asInt64, err := ctx.PathValueAsString("id").AsInt64()
 		//if err != nil {
-		//	ctx.resp.Write([]byte("id非法值"))
+		//	ctx.Resp.Write([]byte("id非法值"))
 		//} else {
-		//	ctx.resp.Write([]byte(fmt.Sprintf("hello,value:%d", asInt64)))
+		//	ctx.Resp.Write([]byte(fmt.Sprintf("hello,value:%d", asInt64)))
 		//}
-		//ctx.resp.Write([]byte(ctx.req.URL.Path))
+		//ctx.Resp.Write([]byte(ctx.Req.URL.Path))
 		value, err := ctx.QueryValue("id")
 		if err != nil {
-			ctx.resp.Write([]byte("id非法值"))
+			ctx.Resp.Write([]byte("id非法值"))
 		} else {
-			ctx.resp.Write([]byte(fmt.Sprintf("id正常,value:%s", value)))
+			ctx.Resp.Write([]byte(fmt.Sprintf("id正常,value:%s", value)))
 		}
 	})
 
@@ -40,6 +40,7 @@ func TestServer(t *testing.T) {
 
 func TestHttpServer_ServeHTTP(t *testing.T) {
 	server := NewHttpServer()
+	//server.middleWare = build
 	server.middleWare = []MiddleWare{
 		func(next HandleFunc) HandleFunc {
 			return func(ctx *Context) {
@@ -67,4 +68,7 @@ func TestHttpServer_ServeHTTP(t *testing.T) {
 		},
 	}
 	server.ServeHTTP(nil, &http.Request{})
+	server.Start(":9090")
 }
+
+//func Tes(t *testing.T)
