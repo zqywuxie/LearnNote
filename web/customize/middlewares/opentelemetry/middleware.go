@@ -1,7 +1,7 @@
 // @Author: zqy
 // @File: middleware.go
 // @Date: 2023/5/12 16:05
-// @Description tracing
+// @Description tracing,数据链路跟踪
 
 package opentelemetry
 

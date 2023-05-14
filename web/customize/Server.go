@@ -105,6 +105,7 @@ func (h *HttpServer) serve(c *Context) {
 		//c.Resp.WriteHeader(http.StatusNotFound)
 		c.RespCode = http.StatusNotFound
 		c.RespData = []byte("NOT FOUND")
+		//todo 404 重定向到某个界面
 		return
 	}
 	c.pathParams = info.pathParam
