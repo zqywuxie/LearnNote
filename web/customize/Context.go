@@ -5,6 +5,8 @@
 package customize
 
 import (
+	"GoCode/web/customize/Render"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +42,19 @@ type Context struct {
 
 	// 新增字段获得匹配路径
 	MatchedRoute string
+
+	// 模板渲染
+	template Render.TemplateEngine
+}
+
+func (c *Context) Render(ctx context.Context, tplName string, data any) error {
+	var err error
+	c.RespData, err = c.template.Render(ctx, tplName, data)
+	if err != nil {
+		c.RespCode = http.StatusInternalServerError
+	}
+	c.RespCode = http.StatusOK
+	return err
 }
 
 type SafeContext struct {
