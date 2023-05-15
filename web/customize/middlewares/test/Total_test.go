@@ -25,7 +25,7 @@ func TestHttpServer_ServeHTTP1(t *testing.T) {
 		},
 	}
 	server := customize.NewHttpServer()
-	server.Use(http.MethodGet, "/user", recoverMsg.Build(), build)
+	server.Use(http.MethodGet, "/user/*", recoverMsg.Build(), build)
 
 	server.Get("/user/add", func(ctx *customize.Context) {
 		//fmt.Println("hello")

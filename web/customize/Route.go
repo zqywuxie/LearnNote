@@ -228,6 +228,7 @@ func (n *node) childOfNoStatic(path string) (*node, bool) {
 	if n.regChildren != nil {
 		// 如果匹配成功 就返回节点
 		if n.regChildren.regExpr.MatchString(path) {
+			//n.regChildren.middlewares =
 			return n.regChildren, true
 		}
 	}
@@ -254,8 +255,11 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	// 创建matchInfo
 	var pathParams map[string]string
 	mi := &matchInfo{}
+
 	//child := root
+
 	mi.middlewares = r.findlMdls(root, segs)
+
 	for _, s := range segs {
 		//var paramOk bool
 		child, ok := root.childOf(s)
@@ -264,6 +268,7 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 			// todo 注意这里的root还是child
 			if root.typ == nodeTypeAny {
 				mi.n = root
+				mi.middlewares = root.middlewares
 				// todo 直接返回？
 				return mi, true
 			}
@@ -283,9 +288,9 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 
 // 从根节点开始
 func (r *router) findlMdls(root *node, segs []string) []MiddleWare {
+	var child *node
 	queue := []*node{root}
 	res := make([]MiddleWare, 0, 16)
-
 	// 使用segs 判断整个路径是否还有middlewares
 	for i := 0; i < len(segs); i++ {
 		seg := segs[i]
@@ -294,9 +299,14 @@ func (r *router) findlMdls(root *node, segs []string) []MiddleWare {
 			if len(cur.middlewares) > 0 {
 				res = append(res, cur.middlewares...)
 			}
-			child, _ := cur.childOf(seg)
-
+			//todo 完善通配符路由middleware
+			if cur.starChildren != nil {
+				child = cur.starChildren
+			} else {
+				child, _ = cur.childOf(seg)
+			}
 			children = append(children, child)
+
 		}
 		queue = children
 	}
