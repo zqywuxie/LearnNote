@@ -268,7 +268,7 @@ func TestRouter_findRoute(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			info, found := r.findRoute(tc.method, tc.path)
+			info, found := findRoute(tc.method, tc.path)
 			assert.Equal(t, tc.found, found)
 			if !found {
 				return

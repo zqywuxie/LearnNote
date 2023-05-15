@@ -43,11 +43,15 @@ type node struct {
 	// 到达叶子节点才执行
 	handler HandleFunc
 	typ     int
+
+	middlewares []MiddleWare
 }
 
 type matchInfo struct {
 	n         *node
 	pathParam map[string]string
+
+	middlewares []MiddleWare
 }
 
 type router struct {
@@ -62,7 +66,7 @@ func newRouter() *router {
 	}
 }
 
-func (r *router) AddRoute(method string, path string, handle HandleFunc) {
+func (r *router) AddRoute(method string, path string, handle HandleFunc, middlewares ...MiddleWare) {
 	if path == "" {
 		panic("web: 空路径")
 	}
@@ -103,6 +107,9 @@ func (r *router) AddRoute(method string, path string, handle HandleFunc) {
 
 	// route 获得完整匹配路径
 	root.route = path
+
+	// 创建路由 添加middlewares
+	root.middlewares = middlewares
 
 }
 
@@ -233,6 +240,7 @@ func (n *node) childOfNoStatic(path string) (*node, bool) {
 }
 func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	root, ok := r.trees[method]
+
 	if !ok {
 		return nil, false
 	}
@@ -247,6 +255,7 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	var pathParams map[string]string
 	mi := &matchInfo{}
 	//child := root
+	mi.middlewares = r.findlMdls(root, segs)
 	for _, s := range segs {
 		//var paramOk bool
 		child, ok := root.childOf(s)
@@ -268,5 +277,34 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	}
 	mi.n = root
 	mi.pathParam = pathParams
+	// 查找middleware
 	return mi, true
+}
+
+// 从根节点开始
+func (r *router) findlMdls(root *node, segs []string) []MiddleWare {
+	queue := []*node{root}
+	res := make([]MiddleWare, 0, 16)
+
+	// 使用segs 判断整个路径是否还有middlewares
+	for i := 0; i < len(segs); i++ {
+		seg := segs[i]
+		var children []*node
+		for _, cur := range queue {
+			if len(cur.middlewares) > 0 {
+				res = append(res, cur.middlewares...)
+			}
+			child, _ := cur.childOf(seg)
+
+			children = append(children, child)
+		}
+		queue = children
+	}
+	for _, cur := range queue {
+		if len(cur.middlewares) > 0 {
+			res = append(res, cur.middlewares...)
+		}
+	}
+
+	return res
 }

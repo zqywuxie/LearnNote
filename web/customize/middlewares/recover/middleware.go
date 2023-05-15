@@ -8,7 +8,7 @@ package recover
 import "GoCode/web/customize"
 
 type MiddlewareBuilder struct {
-	statusCode int
+	StatusCode int
 	ErrMsg     string
 	//LogFunc func(err any)
 	LogFunc func(ctx *customize.Context)
@@ -20,7 +20,7 @@ func (m *MiddlewareBuilder) Build() customize.MiddleWare {
 			defer func() {
 				// 判断是否有panic,有就进行篡改响应数据
 				if err := recover(); err != nil {
-					ctx.RespCode = m.statusCode
+					ctx.RespCode = m.StatusCode
 					ctx.RespData = []byte(m.ErrMsg)
 					m.LogFunc(ctx)
 				}

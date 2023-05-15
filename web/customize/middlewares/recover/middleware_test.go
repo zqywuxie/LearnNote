@@ -13,7 +13,7 @@ import (
 
 func TestMiddlewareBuilder_Build(t *testing.T) {
 	builder := &MiddlewareBuilder{
-		statusCode: 500,
+		StatusCode: 500,
 		ErrMsg:     "出错了",
 		LogFunc: func(ctx *customize.Context) {
 			log.Println(ctx.Req.URL.Path)

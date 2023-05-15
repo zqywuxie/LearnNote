@@ -19,7 +19,7 @@ type Server interface {
 	Start(address string) error
 	//router
 	//
-	addRoute(method, path string, handleFunc HandleFunc)
+	addRoute(method, path string, handleFunc HandleFunc, middleware ...MiddleWare)
 
 	findRoute(method, path string) (*matchInfo, bool)
 }
@@ -100,7 +100,9 @@ func (h *HttpServer) flashResp(ctx *Context) {
 }
 func (h *HttpServer) serve(c *Context) {
 	// 查找路由，执行操作
+	// BeforeRoute
 	info, ok := h.findRoute(c.Req.Method, c.Req.URL.Path)
+	// AfterRoute
 	if !ok || info.n.handler == nil {
 		//c.Resp.WriteHeader(http.StatusNotFound)
 		c.RespCode = http.StatusNotFound
@@ -110,7 +112,10 @@ func (h *HttpServer) serve(c *Context) {
 	}
 	c.pathParams = info.pathParam
 	c.MatchedRoute = info.n.route
+	h.middleWare = info.middlewares
+	// Before execute
 	info.n.handler(c)
+	// After execute
 }
 func (h *HttpServer) Start(address string) error {
 
@@ -122,8 +127,8 @@ func (h *HttpServer) Start(address string) error {
 // AddRoute 路由注册
 // 这里handleFunc只传入一个，方便进行处理
 // 使用可选参数的话 会考虑到很多问题，并且用户还可能不传参数，编译不会检查到，导致程序出错
-func (h *HttpServer) addRoute(method, path string, handleFunc HandleFunc) {
-	h.router.AddRoute(method, path, handleFunc)
+func (h *HttpServer) addRoute(method, path string, handleFunc HandleFunc, middlewares ...MiddleWare) {
+	h.router.AddRoute(method, path, handleFunc, middlewares...)
 }
 func (h *HttpServer) findRoute(method string, path string) (*matchInfo, bool) {
 	return h.router.findRoute(method, path)
@@ -137,4 +142,9 @@ func (h *HttpServer) Get(path string, handleFunc HandleFunc) {
 // Post  衍生API
 func (h *HttpServer) Post(path string, handleFunc HandleFunc) {
 	h.addRoute(http.MethodPost, path, handleFunc)
+}
+
+// Use 可路由的匹配
+func (h *HttpServer) Use(method string, path string, middlewares ...MiddleWare) {
+	h.addRoute(method, path, nil, middlewares...)
 }
