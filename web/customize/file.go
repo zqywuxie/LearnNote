@@ -6,7 +6,9 @@
 package customize
 
 import (
+	lru "github.com/hashicorp/golang-lru"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -30,31 +32,127 @@ type FileDownLoader struct {
 // StaticResource 处理静态资源
 type StaticResource struct {
 	dir string
+
+	// 缓存
+	cache *lru.Cache
+
+	// 设置文件匹配策略
+	extensionContextType map[string]string
+
+	// 设置最大缓存
+	maxSize int
 }
 
+type fileCacheItem struct {
+	contentType string
+	fileName    string
+	fileSize    int
+	data        []byte
+}
+
+// cacheFile 封装缓存方法
+func (r *StaticResource) cacheFile(item *fileCacheItem) {
+	if r.cache != nil && r.maxSize >= item.fileSize {
+		r.cache.Add(item.fileName, item.data)
+	}
+}
+
+func (r *StaticResource) writeItemAsResponse(item *fileCacheItem, writer http.ResponseWriter) {
+	writer.Header().Set("Content-Type", item.contentType)
+	writer.Header().Set("Content-Length", string(item.data))
+	writer.Write([]byte(item.data))
+	writer.WriteHeader(http.StatusOK)
+}
+
+// 从缓存里面读取配置
+func (r *StaticResource) readFileFromData(fileName string) (*fileCacheItem, bool) {
+	if r.cache != nil {
+		if value, ok := r.cache.Get(fileName); ok {
+			return value.(*fileCacheItem), true
+		}
+	}
+	return nil, false
+}
+
+// StaticResourceHandlerOption 用户自定义内容
+type StaticResourceHandlerOption func(s *StaticResource)
+
+func StaticWithCache(maxFileSizeThreshold int, maxCacheFileCnt int) StaticResourceHandlerOption {
+	return func(s *StaticResource) {
+		cache, err := lru.New(maxCacheFileCnt)
+		if err != nil {
+			log.Println("创建缓存失败，不会进行缓存数据")
+		}
+		s.cache = cache
+		s.maxSize = maxFileSizeThreshold
+	}
+}
+
+func WithMoreExtension(extMap map[string]string) StaticResourceHandlerOption {
+	return func(s *StaticResource) {
+		for key, value := range extMap {
+			s.extensionContextType[key] = value
+		}
+	}
+}
+
+func NewStaticResource(dir string, opts ...StaticResourceHandlerOption) (*StaticResource, error) {
+	s := &StaticResource{
+		dir: dir,
+		extensionContextType: map[string]string{
+			"jpg":  "image/jpg",
+			"png":  "image/png",
+			"jpeg": "image/jpeg",
+			"pdf":  "image/pdf",
+			"jpe":  "image/jpe",
+		}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
+}
+
+// Handle 静态资源处理
 func (r *StaticResource) Handle(ctx *Context) {
-	value, err := ctx.PathValue("file")
+	fileName, err := ctx.PathValue("file")
 	if err != nil {
 		ctx.RespData = []byte("路径错误")
 		ctx.RespCode = http.StatusBadRequest
 		return
 	}
-	path := filepath.Join(r.dir, value)
+	// 先从缓存里面查询，如果没有再进入磁盘查询
+
+	if data, ok := r.readFileFromData(fileName); ok {
+		r.writeItemAsResponse(data, ctx.Resp)
+		return
+	}
+
+	// 从磁盘里面读取
+	path := filepath.Join(r.dir, fileName)
+	ext := filepath.Ext(path)[1:]
+	contextType := r.extensionContextType[ext]
 	file, err := os.ReadFile(path)
 	if err != nil {
 		ctx.RespData = []byte("服务器故障")
 		ctx.RespCode = http.StatusInternalServerError
 		return
 	}
-	ctx.RespData = file
-	ctx.RespCode = http.StatusOK
+
+	item := &fileCacheItem{
+		contentType: contextType,
+		fileName:    fileName,
+		fileSize:    len(file),
+		data:        file,
+	}
+	r.cacheFile(item)
+	r.writeItemAsResponse(item, ctx.Resp)
 }
 
 // 结合option使用
 //func (u *FileUploader) HandleFunc(ctx *Context) {
 //}
 
-// Handle 在注册路由的时候 作为handlefunc进行传入
+// Handle 在注册路由的时候 作为HandleFunc进行传入
 func (u *FileUploader) Handle() HandleFunc {
 	return func(ctx *Context) {
 		// 1.获取http请求的数据

@@ -180,9 +180,8 @@ func TestDownLoader(t *testing.T) {
 
 func TestStaticResource_Handle(t *testing.T) {
 	server := NewHttpServer()
-	s := &StaticResource{
-		dir: filepath.Join("testdata", "static"),
-	}
+	s, err := NewStaticResource(filepath.Join("testdata", "static"))
+	require.NoError(t, err)
 
 	// 访问 localhost:9090/static/test.js
 	server.Get("/static/:file", s.Handle)
