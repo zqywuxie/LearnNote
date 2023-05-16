@@ -170,3 +170,21 @@ func TestUpload(t *testing.T) {
 	server.Post("/upload", fn.Handle())
 	server.Start(":9090")
 }
+
+func TestDownLoader(t *testing.T) {
+	server := NewHttpServer()
+	// 浏览器输入localhost:9090/download?file=640.png，浏览器就会从testdata/download里面下载
+	server.Get("/download", (&FileDownLoader{Dir: "./testdata/download"}).Handle())
+	server.Start(":9090")
+}
+
+func TestStaticResource_Handle(t *testing.T) {
+	server := NewHttpServer()
+	s := &StaticResource{
+		dir: filepath.Join("testdata", "static"),
+	}
+
+	// 访问 localhost:9090/static/test.js
+	server.Get("/static/:file", s.Handle)
+	server.Start(":9090")
+}

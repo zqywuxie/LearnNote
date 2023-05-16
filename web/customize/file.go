@@ -1,7 +1,7 @@
 // @Author: zqy
 // @File:FileOperation.go
 // @Date: 2023/5/16 10:31
-// @Description todo
+// @Description 文件操作；目前文件操作使用oss，而不是直接与服务器操作，这样会比较安全
 
 package customize
 
@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type FileUploader struct {
@@ -21,7 +22,40 @@ type FileUploader struct {
 	DstPathFunc func(*multipart.FileHeader) string
 }
 
-func (u FileUploader) Handle() HandleFunc {
+type FileDownLoader struct {
+	// Dir 下载文件所在地址
+	Dir string
+}
+
+// StaticResource 处理静态资源
+type StaticResource struct {
+	dir string
+}
+
+func (r *StaticResource) Handle(ctx *Context) {
+	value, err := ctx.PathValue("file")
+	if err != nil {
+		ctx.RespData = []byte("路径错误")
+		ctx.RespCode = http.StatusBadRequest
+		return
+	}
+	path := filepath.Join(r.dir, value)
+	file, err := os.ReadFile(path)
+	if err != nil {
+		ctx.RespData = []byte("服务器故障")
+		ctx.RespCode = http.StatusInternalServerError
+		return
+	}
+	ctx.RespData = file
+	ctx.RespCode = http.StatusOK
+}
+
+// 结合option使用
+//func (u *FileUploader) HandleFunc(ctx *Context) {
+//}
+
+// Handle 在注册路由的时候 作为handlefunc进行传入
+func (u *FileUploader) Handle() HandleFunc {
 	return func(ctx *Context) {
 		// 1.获取http请求的数据
 		file, header, err := ctx.Req.FormFile(u.FileField)
@@ -60,5 +94,36 @@ func (u FileUploader) Handle() HandleFunc {
 		// 4.返回响应
 		ctx.RespCode = http.StatusOK
 		ctx.RespData = []byte("上传成功")
+	}
+}
+
+// Handle 文件下载
+func (f FileDownLoader) Handle() HandleFunc {
+	return func(ctx *Context) {
+		req, err := ctx.QueryValue("file")
+		if err != nil {
+			ctx.RespCode = http.StatusBadRequest
+			ctx.RespData = []byte("找不到目前文件")
+			return
+		}
+		//filepath.Clean 函数的作用是返回等效的路径名，它会通过纠正路径中的错误或规范化路径分隔符等方式来实现。
+		path := filepath.Join(f.Dir, filepath.Clean(req))
+		base := filepath.Base(path)
+		path, _ = filepath.Abs(path)
+		if !strings.Contains(path, f.Dir) {
+			ctx.RespCode = http.StatusGatewayTimeout
+			ctx.RespData = []byte("错误请求")
+			return
+		}
+		header := ctx.Resp.Header()
+		// 设置响应头
+		header.Set("Content-Disposition", "attachment;filename="+base)
+		header.Set("Content-Description", "File Transfer")
+		header.Set("Content-Type", "application/octet-stream")
+		header.Set("Content-Transfer-Encoding", "binary")
+		header.Set("Expires", "0")
+		header.Set("Cache-Control", "must-revalidate")
+		header.Set("Pragma", "public")
+		http.ServeFile(ctx.Resp, ctx.Req, path)
 	}
 }
