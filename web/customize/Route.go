@@ -240,6 +240,10 @@ func (n *node) childOfNoStatic(path string) (*node, bool) {
 	return n.starChildren, n.starChildren != nil
 }
 func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
+	//todo 渲染页面会出现网站图标
+	if path == "/favicon.ico" {
+		return nil, false
+	}
 	root, ok := r.trees[method]
 
 	if !ok {

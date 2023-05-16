@@ -6,7 +6,6 @@ package customize
 
 import (
 	"GoCode/web/customize/Render"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,9 +46,9 @@ type Context struct {
 	template Render.TemplateEngine
 }
 
-func (c *Context) Render(ctx context.Context, tplName string, data any) error {
+func (c *Context) Render(tplName string, data any) error {
 	var err error
-	c.RespData, err = c.template.Render(ctx, tplName, data)
+	c.RespData, err = c.template.Render(c.Req.Context(), tplName, data)
 	if err != nil {
 		c.RespCode = http.StatusInternalServerError
 	}

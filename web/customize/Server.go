@@ -5,8 +5,8 @@
 package customize
 
 import (
+	"GoCode/web/customize/Render"
 	"fmt"
-
 	"net/http"
 )
 
@@ -31,6 +31,7 @@ type HttpServer struct {
 	*router
 	log        func(msg string, args ...any)
 	middleWare []MiddleWare
+	tplEngine  Render.TemplateEngine
 }
 type HTTPServerOption func(server *HttpServer)
 
@@ -54,14 +55,21 @@ func ServerWithMiddleWare(mdls ...MiddleWare) HTTPServerOption {
 	}
 }
 
+func ServerWithTemplateEngine(engine Render.TemplateEngine) HTTPServerOption {
+	return func(server *HttpServer) {
+		server.tplEngine = engine
+	}
+}
+
 // ServeHTTP 核心入口
 // Context的构建
 // 路由匹配
 // 执行业务逻辑
 func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := &Context{
-		Req:  r,
-		Resp: w,
+		Req:      r,
+		Resp:     w,
+		template: h.tplEngine,
 	}
 
 	root := h.serve

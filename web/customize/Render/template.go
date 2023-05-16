@@ -5,7 +5,11 @@
 
 package Render
 
-import "context"
+import (
+	"bytes"
+	"context"
+	"html/template"
+)
 
 type TemplateEngine interface {
 
@@ -18,4 +22,14 @@ type TemplateEngine interface {
 	//Render(ctx context.Context, tplName string, data any,writer io.Writer)  error
 
 	//AddTemplate等方法，让具体实现管自己的模板
+}
+
+type GoTemplateEngine struct {
+	T *template.Template
+}
+
+func (g *GoTemplateEngine) Render(ctx context.Context, tplName string, data any) ([]byte, error) {
+	b := &bytes.Buffer{}
+	err := g.T.ExecuteTemplate(b, tplName, data)
+	return b.Bytes(), err
 }

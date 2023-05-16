@@ -1,17 +1,23 @@
+//go:build e2e
+
 // @Author: zqy
 // @File: template_test.go
 // @Date: 2023/5/15 22:25
 // @Description todo
 
-package Render
+package customize
 
 import (
+	"GoCode/web/customize/Render"
 	"bytes"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"html/template"
+	"log"
+	"mime/multipart"
+	"path/filepath"
 	"testing"
-	"text/template"
 )
 
 type User struct {
@@ -122,4 +128,45 @@ func TestIFELSE(t *testing.T) {
 	bfs := &bytes.Buffer{}
 	tpl.Execute(bfs, User{Age: 12})
 	assert.Equal(t, "儿童 12<age<18", bfs.String())
+}
+
+func TestGoTemplateEngine_Render(t *testing.T) {
+
+	parseGlob, err := template.ParseGlob("testdata/tpls/*.gohtml")
+	require.NoError(t, err)
+	engine := &Render.GoTemplateEngine{T: parseGlob}
+	server := NewHttpServer(ServerWithTemplateEngine(engine))
+	server.Get("/user", func(ctx *Context) {
+		// 默认是文件名，否则会报undefined
+		err = ctx.Render("login.gohtml", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		//fmt.Println("hello")
+	})
+	server.Start(":9090")
+}
+
+func TestUpload(t *testing.T) {
+	parseGlob, err := template.ParseGlob("testdata/tpls/*.gohtml")
+	require.NoError(t, err)
+	engine := &Render.GoTemplateEngine{T: parseGlob}
+	server := NewHttpServer(ServerWithTemplateEngine(engine))
+	server.Get("/upload", func(ctx *Context) {
+		// 默认是文件名，否则会报undefined
+		err = ctx.Render("upload.gohtml", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		//fmt.Println("hello")
+	})
+	fn := &FileUploader{
+		FileField: "myfile",
+		DstPathFunc: func(header *multipart.FileHeader) string {
+			//fmt.Println(filepath.Join("testdata", "upload", uuid.New().String()))
+			return filepath.Join("testdata", "upload", header.Filename)
+		},
+	}
+	server.Post("/upload", fn.Handle())
+	server.Start(":9090")
 }
