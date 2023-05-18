@@ -44,6 +44,9 @@ type Context struct {
 
 	// 模板渲染
 	template Render.TemplateEngine
+
+	// 用来存储用户相关的信息(作为缓存),如session
+	UserValues map[string]any
 }
 
 func (c *Context) Render(tplName string, data any) error {
