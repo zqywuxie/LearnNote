@@ -42,7 +42,6 @@ func NewHttpServer(opts ...HTTPServerOption) *HttpServer {
 			fmt.Printf(msg, args...)
 		},
 	}
-
 	for _, opt := range opts {
 		opt(res)
 	}
@@ -120,7 +119,8 @@ func (h *HttpServer) serve(c *Context) {
 	}
 	c.pathParams = info.pathParam
 	c.MatchedRoute = info.n.route
-	h.middleWare = info.middlewares
+	// todo 这里需要将本身server的middleware和路由的相组合
+	h.middleWare = append(h.middleWare, info.middlewares...)
 	// Before execute
 	info.n.handler(c)
 	// After execute

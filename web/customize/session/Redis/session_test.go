@@ -21,7 +21,7 @@ func TestStore_Generate(t *testing.T) {
 	id := "sess_test_id"
 	sess, err := s.Generate(ctx, id)
 	require.NoError(t, err)
-	defer s.Remove(ctx, id)
+	//defer s.Remove(ctx, id)
 	err = sess.Set(ctx, "key1", "123")
 	require.NoError(t, err)
 	value, err := sess.Get(ctx, "key1")

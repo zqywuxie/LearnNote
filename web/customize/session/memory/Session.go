@@ -79,7 +79,7 @@ func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
 	defer s.mutex.RUnlock()
 	sess, ok := s.sessions.Get(id)
 	if !ok {
-		return nil, errSessionNotFound
+		return nil, session.ErrSessionNotFound
 	}
 
 	return sess.(*Session), nil
@@ -87,7 +87,7 @@ func (s *Store) Get(ctx context.Context, id string) (session.Session, error) {
 func (s *Session) Get(ctx context.Context, key string) (any, error) {
 	value, ok := s.values.Load(key)
 	if !ok {
-		return nil, fmt.Errorf("%s,key %s", errKeyNotFound, key)
+		return nil, fmt.Errorf("%s,key %s", session.ErrSessionNotFound, key)
 	}
 	return value, nil
 }

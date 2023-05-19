@@ -7,6 +7,7 @@ package session
 
 import (
 	"GoCode/web/customize"
+	"github.com/google/uuid"
 )
 
 // Manager 提高用户体验，并不是核心功能，对于开发者而言只是一个粘水
@@ -41,7 +42,8 @@ func (m *Manager) GetSession(ctx *customize.Context) (Session, error) {
 }
 
 // InitSession 初始化session，使用uuid作为key
-func (m *Manager) InitSession(ctx *customize.Context, id string) (Session, error) {
+func (m *Manager) InitSession(ctx *customize.Context) (Session, error) {
+	id := uuid.New().String()
 	session, err := m.Generate(ctx.Req.Context(), id)
 	if err != nil {
 		return nil, err

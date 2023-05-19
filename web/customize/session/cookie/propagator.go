@@ -35,7 +35,6 @@ func (p *Propagator) Inject(id string, w http.ResponseWriter) error {
 		// session是否存在的
 		//Expires:
 	}
-	p.cookieOption(c)
 	http.SetCookie(w, c)
 	return nil
 }
