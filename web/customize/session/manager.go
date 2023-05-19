@@ -3,13 +3,13 @@
 // @Date: 2023/5/18 14:37
 // @Description todo
 
-package Session
+package session
 
 import (
 	"GoCode/web/customize"
 )
 
-// Manager 提高用户体验
+// Manager 提高用户体验，并不是核心功能，对于开发者而言只是一个粘水
 type Manager struct {
 	Store
 	Propagator

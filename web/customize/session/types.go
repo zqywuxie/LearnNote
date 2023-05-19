@@ -3,17 +3,24 @@
 // @Date: 2023/5/17 11:21
 // @Description todo
 
-package Session
+package session
 
 import (
 	"context"
+	"errors"
 	"net/http"
+)
+
+var (
+	ErrKeyNotFound     = errors.New("session key not found")
+	ErrSessionNotFound = errors.New("session not found")
+	ErrSessionNotExist = errors.New("session不存在")
 )
 
 // Session /Provider 设置为接口,不自定义session，而是使用gorilla/sessions
 // 内存存到context.Context里面
 type Session interface {
-	Get(ctx context.Context, key string) (string, error)
+	Get(ctx context.Context, key string) (any, error)
 	Set(ctx context.Context, key string, value string) error
 	//ID  获得session-id
 	ID() string

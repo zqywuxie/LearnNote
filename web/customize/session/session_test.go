@@ -3,7 +3,7 @@
 // @Date: 2023/5/18 15:03
 // @Description todo
 
-package Session
+package session
 
 import (
 	"GoCode/web/customize"
