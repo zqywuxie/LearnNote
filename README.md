@@ -1,12 +1,27 @@
-web：
+# EasyWeb(后续进行文档的优化)
 
-自定义web框架，目前功能
+使用初学者学习自定义web框架，目前功能：
 
-- 路由树的查找和注册（静态匹配，通配符匹配，参数路径匹配）
-- http.ListenAndServe自定义
-- middleware设计
-  - logserver
-  - tracing（openTelemetry整合zipkin)
+- Route.go 
+    - 路由树的查找和注册（静态匹配，通配符匹配，参数路径匹配）
+
+- Server.go 
+    - http.ListenAndServe自定义
+
+- middleware
+    - accesslog 日志打印
+    - tracing（openTelemetry整合zipkin) 链路追踪
+    - errhdl 错误信息的定义
+    - Prometheus 整合Prometheus进行系统监控
+    - recover panic的恢复
+- Render 页面的渲染
+- file.go 文件的上传下载
+- session的操作
+  - 支持redis的存储
+  - 本地内存的存储
+  - cookie的存储管理
+- Context.go
+  - 对context.Context进行二次封装
 
 
 
@@ -35,8 +50,6 @@ web：
 面试要点
 
 - 性能受到什么影响:树的高度和宽度(如果子节点树用map，倒不用考虑，查找很快)
-
-
 
 优化：
 
