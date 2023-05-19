@@ -22,7 +22,11 @@ func NewPropagator(options ...PropagatorOption) *Propagator {
 	}
 	return p
 }
-
+func WithPropagatorCookieName(cookieName string) PropagatorOption {
+	return func(propagator *Propagator) {
+		propagator.cookieName = cookieName
+	}
+}
 func (p *Propagator) Inject(id string, w http.ResponseWriter) error {
 	c := &http.Cookie{
 		Name:  p.cookieName,

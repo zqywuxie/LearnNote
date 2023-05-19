@@ -132,7 +132,6 @@ func (s *Session) Get(ctx context.Context, key string) (any, error) {
 // 使用lua脚本，保证操作原子性
 func (s *Session) Set(ctx context.Context, key string, value string) error {
 	const lua = `
-// 判断session是否存在
 if redis.call("exists",KEYS[1])
 then
 	return redis.call("hset",KEYS[1],ARGV[1],ARGV[2])
