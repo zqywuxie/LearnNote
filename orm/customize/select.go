@@ -69,6 +69,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 		SQL:  sb.String(),
 		args: s.args,
 	}, nil
+
 }
 
 func (s *Selector[T]) buildExpression(e Expression) error {

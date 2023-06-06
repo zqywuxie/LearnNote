@@ -396,3 +396,48 @@ func (s *Selector[T]) From(table string) *Selector[T] {
 •   ORDER BY
 •   GROUP BY
 •   LIMIT 和 OFFSET
+
+
+
+## 元数据
+
+### 校验问题
+
+当用户输入错误，该如何解决
+
+- 方法一：**不做任何校验**，当SQL语句在数据库执行时返回错误
+- 方法二：**尽早进行校验**
+  - 方便测试，在不连接上数据库时进行校验
+  - 尽早发现错误（在编写时就进行返回）
+
+![image-20230606220200614](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/06/05/image-20230606220200614.png)
+
+
+
+### 元数据概念
+
+> ORM 框架需要解析模型以获得模型的元数据，这 些元数据将被用于构建 SQL、执行校验，以及用 于处理结果集。
+>
+> 模型：一般是指**对应到数据库表的 Go 结构体定义**，也被称为 Schema、Table 等。
+
+![image-20230606220310071](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/06/05/image-20230606220310071.png)
+
+
+
+> 设计总结：
+> •   模型（表的抽象）：对应的表名、索引、主键、关联关系
+> • 列：列名、Go 类型、数据库类型、是否主键、是否外键……
+
+但是一开始结构体的字段都是慢慢演化，根据需求进行不断添加
+
+![image-20230606220913209](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/06/06/image-20230606220913209.png)
+
+目前进行设计简单的模型，使用**反射**进行获得
+
+> 反射的相关 API 都在 reflect 包，最核心的两 个：
+> •   reflect.Value：用于操作值，部分值是可以 被反射修改的
+> •   reflect.Type：用于操作类信息，类信息是 **只能读取**,无法改变类型信息
+>
+> reflect.Type 可以通过 reflect.Value 得到，但 是反过来则不行。
+
+![image-20230606230703189](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/06/06/image-20230606230703189.png)
