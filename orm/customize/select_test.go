@@ -19,10 +19,10 @@ func TestSelector_Build(t *testing.T) {
 		wantErr   error
 	}{
 		{
-			name:    "selector withour from",
+			name:    "selector without from",
 			builder: &Selector[TestModel]{},
 			wantQuery: &Query{
-				SQL:  "SELECT * FROM `TestModel`;",
+				SQL:  "SELECT * FROM `test_model`;",
 				args: nil,
 			},
 			wantErr: nil,
@@ -59,9 +59,9 @@ func TestSelector_Build(t *testing.T) {
 		{
 			name: "selector with Not",
 
-			builder: (&Selector[TestModel]{}).Where(Not(C("id").Eq(12))),
+			builder: (&Selector[TestModel]{}).Where(Not(C("Id").Eq(12))),
 			wantQuery: &Query{
-				SQL:  "SELECT * FROM `TestModel` WHERE  NOT (`id` = ?);",
+				SQL:  "SELECT * FROM `test_model` WHERE  NOT (`id` = ?);",
 				args: []any{12},
 			},
 			wantErr: nil,

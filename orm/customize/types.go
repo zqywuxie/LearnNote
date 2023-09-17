@@ -10,8 +10,8 @@ import (
 	"database/sql"
 )
 
-// Querier 单一查询接口
-type Querier[T any] interface {
+// Queries 单一查询接口
+type Queries[T any] interface {
 	Get(ctx context.Context) (*T, error)
 	GetMulti(ctx context.Context) ([]*T, error)
 }

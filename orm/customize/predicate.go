@@ -39,6 +39,7 @@ func (p Predicate) expr() {
 // Expression 用于标记是一个表达式
 // 标记接口（Marker Interface）是一个不包含任何方法的空接口，它没有提供任何方法实现，
 // 仅用于标识一个类型是否符合特定的约定或属性。
+// 然后将value,column注册为Expression，后续便于统一管理
 type Expression interface {
 	expr()
 }

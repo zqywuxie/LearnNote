@@ -41,6 +41,7 @@ func IterateFields(entity any) (map[string]any, error) {
 	for i := 0; i < field; i++ {
 		fieldType := typeOf.Field(i)
 		fieldValue := valueOf.Field(i)
+		// IsExported 判断这个字段是否为私有的
 		if fieldType.IsExported() {
 			res[fieldType.Name] = fieldValue.Interface()
 		} else {
@@ -49,4 +50,20 @@ func IterateFields(entity any) (map[string]any, error) {
 	}
 
 	return res, nil
+}
+
+func SetField(entity any, field string, newValue any) error {
+	value := reflect.ValueOf(entity)
+	// 如果是指针就获得内部值
+	for value.Type().Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+
+	// 返回结构体的字段
+	fieldByName := value.FieldByName(field)
+	if !fieldByName.CanSet() {
+		return errors.New("该字段不可被修改")
+	}
+	fieldByName.Set(reflect.ValueOf(newValue))
+	return nil
 }

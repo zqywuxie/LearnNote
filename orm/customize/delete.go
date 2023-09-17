@@ -1,23 +1,14 @@
-// @Author: zqy
-// @File: select.go
-// @Date: 2023/6/5 16:17
-// @Description todo
-
 package customize
 
-import (
-	"context"
-	"strings"
-)
+import "strings"
 
-type Selector[T any] struct {
-	table  string
-	where  []Predicate
-	Having []Predicate
+type Deleter[T any] struct {
+	table string
+	where []Predicate
 	Builder
 }
 
-func (s *Selector[T]) Build() (*Query, error) {
+func (s *Deleter[T]) Build() (*Query, error) {
 	s.sb = &strings.Builder{}
 	sb := s.sb
 	var err error
@@ -26,7 +17,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 		return nil, err
 	}
 	// 处理空格问题
-	sb.WriteString("SELECT * FROM ")
+	sb.WriteString("DELETE FROM ")
 	// 通过反射获得表明，泛型的名称。默认使用结构体名作为表名
 	// 对于带db的参数
 	// 1. 让用户自己加入`
@@ -50,8 +41,7 @@ func (s *Selector[T]) Build() (*Query, error) {
 
 	if len(s.where) > 0 {
 		sb.WriteString(" WHERE ")
-
-		if s.buildPredicates(s.where) != nil {
+		if err = s.buildPredicates(s.where); err != nil {
 			return nil, err
 		}
 
@@ -66,24 +56,12 @@ func (s *Selector[T]) Build() (*Query, error) {
 
 }
 
-// From 兼容传入空字符串，如果加入校验会影响连调功能
-
-func (s *Selector[T]) From(table string) *Selector[T] {
+func (s *Deleter[T]) From(table string) *Deleter[T] {
 	s.table = table
 	return s
 }
 
-func (s *Selector[T]) Where(p ...Predicate) *Selector[T] {
+func (s *Deleter[T]) Where(p ...Predicate) *Deleter[T] {
 	s.where = p
 	return s
-}
-
-func (s *Selector[T]) Get(ctx context.Context) (*T, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s *Selector[T]) GetMulti(ctx context.Context) (*T, error) {
-	//TODO implement me
-	panic("implement me")
 }
