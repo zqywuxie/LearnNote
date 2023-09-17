@@ -1,10 +1,12 @@
 # YunGo(后续进行文档的优化)
 
 > 适于初学者学习一站式Go框架
-> 
+>
+> 代码地址[zqywuxie/LearnNote at code (github.com)](https://github.com/zqywuxie/LearnNote/tree/code)
+>
 > author : zqy 
-> 
-> updateTime : 2023/6/5 22点45分
+>
+> updateTime : 2023年9月17日 15点28分
 > - 自定义web框架（完结）
 > - 自定义ORM框架（进行中)
 
@@ -441,3 +443,291 @@ func (s *Selector[T]) From(table string) *Selector[T] {
 > reflect.Type 可以通过 reflect.Value 得到，但 是反过来则不行。
 
 ![image-20230606230703189](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/06/06/image-20230606230703189.png)
+
+## 反射
+
+### 读写字段
+
+```go
+typeOf := reflect.TypeOf(entity) //从一个任何非接口类型的值创建一个 reflect.Type 值
+valueOf := reflect.ValueOf(entity) //返回的是代表着此接口值的动态值的一个 reflect.Value 值
+valueOf.IsZero() // 判断值是否为零值
+
+
+// 层层解引用
+// for死循环一直深入指针，直到指向内容
+for typeOf.Kind() == reflect.Pointer {
+    // Elem 获得切片等内部值，或指针指向的值
+    typeOf = typeOf.Elem()
+    valueOf = valueOf.Elem()
+}
+
+typeOf.NumField() //得到字段数
+
+for i := 0; i < field; i++ {
+    fieldType := typeOf.Field(i)
+    fieldValue := valueOf.Field(i)
+    // IsExported 判断这个字段是否为私有的
+    if fieldType.IsExported() {
+        // 通过Interface获得最终值
+        res[fieldType.Name] = fieldValue.Interface()
+    } else {
+        res[fieldType.Name] = reflect.Zero(fieldType.Type).Interface()
+    }
+}
+
+
+// 类型只读
+// 字段值可读写，通过CanSet查看是否可写
+if !fieldByName.CanSet() {
+    return errors.New("该字段不可被修改")
+}
+
+```
+
+### 方法
+
+```go
+typ := reflect.TypeOf(entity)
+// 获得定义到结构体上的，指针上的得不到
+numMethod := typ.NumMethod()
+
+
+method := typ.Method(i) //获得实体类的某个方法
+Func := method.Func // .Func
+numIn := Func.Type().NumIn() // 方法接收参数数
+numOut := Func.Type().NumOut() // 方法返回参数树
+
+// 对于结构体实现接口，参数是结构体本身,所以第一个参数是结构体本身
+// 否则下面只会遍历接入参数
+InputValues = append(InputValues, reflect.ValueOf(entity))
+InputArgs = append(InputArgs, reflect.TypeOf(entity))
+
+// 调用该方法
+resValues := Func.Call(InputValues)
+
+```
+
+
+
+### 遍历
+
+```go
+// 数组与切片遍历方式一样
+func IterateArrayOrSlice(entity any) ([]any, error) {
+	val := reflect.ValueOf(entity)
+	res := make([]any, 0, val.Len())
+	for i := 0; i < val.Len(); i++ {
+		res = append(res, val.Index(i).Interface())
+	}
+	return res, nil
+
+}
+
+
+
+// 遍历Map，通过MapKeys，MapIndex获取值
+func IterateMap(entity any) ([]any, []any, error) {
+	val := reflect.ValueOf(entity)
+	entityType := reflect.TypeOf(entity)
+	if reflect.Map != entityType.Kind() {
+		return nil, nil, errors.New("非Map")
+	}
+	MapKeys := make([]any, 0, val.Len())
+	MapValues := make([]any, 0, val.Len())
+	Keys := val.MapKeys()
+	for _, key := range Keys {
+		MapKeys = append(MapKeys, key.Interface())
+		MapValues = append(MapValues, val.MapIndex(key).Interface())
+	}
+	return MapKeys, MapValues, nil
+}
+```
+
+
+
+### 解析模型
+
+**通过结构体来映射数据库**
+
+```go
+func ParseModel(val any) (*Model, error) {
+    types := reflect.TypeOf(val)
+    if types.Kind() != reflect.Pointer && types.Kind() != reflect.Struct {
+        return nil, internal.ErrModelTypeSelect
+    }
+    // 一级指针获得指向的内容
+    types = types.Elem()
+    
+    //结构体字段表字段
+    numField := types.NumField()
+    filedMap := make(map[string]*Filed, numField)
+    for i := 0; i < numField; i++ {
+        field := types.Field(i)
+        filedMap[field.Name] = &Filed{ColName: underscoreName(field.Name)}
+    }
+    return &Model{
+        
+        // underscoreName 进行驼峰转下划线
+        //FirstName -> first_name
+        TableName: underscoreName(types.Name()),
+        FiledMap:  filedMap,
+    }, nil
+}
+
+
+
+// 驼峰转字符串
+func underscoreName(tableName string) string {
+	var buf []byte
+	for i, v := range tableName {
+        // unicode.IsUpper(runne)
+		if unicode.IsUpper(v) {
+			if i != 0 {
+				buf = append(buf, '_')
+			}
+			buf = append(buf, byte(unicode.ToLower(v)))
+		} else {
+			buf = append(buf, byte(v))
+		}
+	}
+	return string(buf)
+}
+
+```
+
+
+
+### 利用元数据改造selector
+
+使用解析模型方法，对之前使用结构体名和字段名进行更新
+
+### delete
+
+仿照select将内容进行修改
+
+## 结果集处理
+
+### Go对齐原则
+
+![在这里插入图片描述](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/09/017/03dd4a0a58674fb8baf39be6100a78a4.png)
+
+这么设计的目的，是减少 CPU 访问内存的次数，加大 CPU 访问内存的吞吐量。比如同样读取 8 个字节的数据，一次读取 4 个字节那么只需要读取 2 次。`CPU 始终以字长访问内存`。
+
+32位一次读4个字节(1字长)，64位则是8个字节
+
+```go
+func PrintFiledOffset(entity any) {
+	typeOf := reflect.TypeOf(entity)
+	numField := typeOf.NumField()
+	for i := 0; i < numField; i++ {
+		filed := typeOf.Field(i)
+		fmt.Println(filed.Offset)
+	}
+}
+type User struct {
+	Name string //16
+	Age  int32 // 4
+	//Alias int32 
+	Hello string 
+} 
+// 0 16 24，因为一次性读8个字节，int32就剩余4个字节，但是下面string不够，所以就跳过int32读取的字节再读一个字长
+
+
+type User struct {
+	Name string //16
+	Age  int32 // 4
+	Alias int32 
+	Hello string 
+} 
+
+// 16 20 24 Alias只需要4个字节，那么就直接使用Age剩余的字节了
+```
+
+
+
+### Unsafe使用
+
+#### 读写值
+
+```go
+type UnsafeAccessor struct {
+	fields  map[string]FieldMata
+	address unsafe.Pointer
+}
+
+type FieldMata struct {
+    // 离起始点的偏移量
+	Offset uintptr
+	Type   reflect.Type
+}
+
+```
+
+**unsafe.pointer和uintptr**
+
+> pointer是Go层面上的指针，uintptr只是一个指向地址的值
+>
+> 如果遇到GC处理后复活，那么地址就会进行改变，此时uintptr就会报错
+>
+> 但是pointer会自己维护好
+
+为什么unsafe比反射高效，因为反射封装了unsafe，所以直接使用unsafe要省去封装的过程。unsafe更倾向于直击底层
+
+```go
+func NewUnsafeAccessor(entity any) UnsafeAccessor {
+	typeof := reflect.TypeOf(entity)
+	typeof = typeof.Elem()
+	numField := typeof.NumField()
+	filedMatas := make(map[string]FieldMata, numField)
+	for i := 0; i < numField; i++ {
+		field := typeof.Field(i)
+       
+		filedMatas[field.Name] = FieldMata{Offset: field.Offset, Type: field.Type}
+	}
+	valueOf := reflect.ValueOf(entity)
+	return UnsafeAccessor{
+		fields: filedMatas,
+		//valueOf.UnsafeAddr() 不用这个是防止被GC等干扰导致出错
+		// 使用指针就算地址出错，但还是会指向
+		address: valueOf.UnsafePointer(),
+	}
+}
+```
+
+
+
+```go
+func (u UnsafeAccessor) Field(filed string) (any, error) {
+	val, ok := u.fields[filed]
+	if !ok {
+		return nil, errors.New("未知字段")
+	}
+	// 获得了当前地址
+	cur := unsafe.Pointer(val.Offset + uintptr(u.address))
+
+	//return *(*int)(cur), nil
+	// 一般来讲不会直到值的确切类型 通过上面的反射拿到type
+	//reflect.New/NewAt 创建指针 所以使用Elem
+	return reflect.NewAt(val.Type, cur).Elem().Interface(), nil
+}
+
+func (u UnsafeAccessor) SetField(filed string, value any) error {
+	val, ok := u.fields[filed]
+	if !ok {
+		return errors.New("未知字段")
+	}
+	// 获得了当前地址
+	cur := unsafe.Pointer(val.Offset + uintptr(u.address))
+
+	//*(*int)(cur) = value.(int)
+
+	reflect.NewAt(val.Type, cur).Elem().Set(reflect.ValueOf(value))
+
+	//return *(*int)(cur), nil
+	// 一般来讲不会直到值的确切类型 通过上面的反射拿到type
+	//reflect.New/NewAt 创建指针 所以使用Elem
+	return nil
+}
+```
+
