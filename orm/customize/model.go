@@ -17,9 +17,33 @@ type Filed struct {
 	ColName string
 }
 
-// 传结构体
+var defauleModles = map[reflect.Type]*Model{}
+
+var defaultRegister = &register{}
+
+type register struct {
+	models map[reflect.Type]*Model
+}
+
+// 先从注册中心获取
+func (r *register) get(val any) (*Model, error) {
+	typ := reflect.TypeOf(val)
+	model, ok := r.models[typ]
+	// 缓存中没有就进行parse
+	if !ok {
+		parseModel, err := r.ParseModel(val)
+		if err != nil {
+			return nil, err
+		}
+		r.models[typ] = parseModel
+		return parseModel, err
+	}
+	return model, nil
+}
+
+// ParseModel 传结构体
 // 限制用户输入一级指针或者结构体，简化开发
-func ParseModel(val any) (*Model, error) {
+func (r *register) ParseModel(val any) (*Model, error) {
 	types := reflect.TypeOf(val)
 	if types.Kind() != reflect.Pointer && types.Kind() != reflect.Struct {
 		return nil, internal.ErrModelTypeSelect

@@ -11,17 +11,25 @@ import (
 )
 
 type Selector[T any] struct {
-	table  string
+	table string
+	Builder
 	where  []Predicate
 	Having []Predicate
-	Builder
+	db     *DB
+}
+
+func newSelector[T any](db *DB) *Selector[T] {
+	return &Selector[T]{
+		db:      db,
+		Builder: Builder{sb: &strings.Builder{}},
+	}
 }
 
 func (s *Selector[T]) Build() (*Query, error) {
-	s.sb = &strings.Builder{}
 	sb := s.sb
 	var err error
-	s.model, err = ParseModel(new(T))
+	s.model, err = s.db.r.get(new(T))
+	//s.model, err = s.db.r.ParseModel(new(T))
 	if err != nil {
 		return nil, err
 	}

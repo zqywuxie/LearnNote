@@ -12,6 +12,10 @@ import (
 )
 
 func TestSelector_Build(t *testing.T) {
+	db, err := NewDB()
+	if err != nil {
+		panic(err)
+	}
 	testCases := []struct {
 		name      string
 		builder   QueryBuilder
@@ -20,7 +24,7 @@ func TestSelector_Build(t *testing.T) {
 	}{
 		{
 			name:    "selector without from",
-			builder: &Selector[TestModel]{},
+			builder: newSelector[TestModel](db),
 			wantQuery: &Query{
 				SQL:  "SELECT * FROM `test_model`;",
 				args: nil,
