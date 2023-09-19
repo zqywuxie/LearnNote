@@ -1,6 +1,8 @@
 package customize
 
-import "reflect"
+import (
+	"sync"
+)
 
 type DB struct {
 	r *register
@@ -11,7 +13,7 @@ type DBOption func(db *DB)
 func NewDB(ops ...DBOption) (*DB, error) {
 	res := &DB{
 		r: &register{
-			models: make(map[reflect.Type]*Model, 64),
+			models: sync.Map{},
 		},
 	}
 	for _, op := range ops {

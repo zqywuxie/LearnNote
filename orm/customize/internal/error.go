@@ -16,6 +16,10 @@ func NewErrorUnknownField(filed string) error {
 	return fmt.Errorf("orm:未知的字段 %v", filed)
 }
 
+func NewInvalidTagContent(pair string) error {
+	return fmt.Errorf("orm:非法标签值 %s", pair)
+}
+
 // ErrorResult
 // @ErrorResult 返回错误信息
 // 解决方案：xxx

@@ -18,7 +18,7 @@ type Selector[T any] struct {
 	db     *DB
 }
 
-func newSelector[T any](db *DB) *Selector[T] {
+func NewSelector[T any](db *DB) *Selector[T] {
 	return &Selector[T]{
 		db:      db,
 		Builder: Builder{sb: &strings.Builder{}},
