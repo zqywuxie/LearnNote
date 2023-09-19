@@ -117,7 +117,9 @@ func (r *register) ParseModel(val any) (*Model, error) {
 	if types.Kind() != reflect.Pointer && types.Kind() != reflect.Struct {
 		return nil, internal.ErrModelTypeSelect
 	}
-	types = types.Elem()
+	if types.Kind() == reflect.Pointer {
+		types = types.Elem()
+	}
 	numField := types.NumField()
 	filedMap := make(map[string]*Filed, numField)
 	for i := 0; i < numField; i++ {
@@ -133,8 +135,16 @@ func (r *register) ParseModel(val any) (*Model, error) {
 
 		filedMap[field.Name] = &Filed{ColName: val}
 	}
+
+	var tableName string
+	if name, ok := val.(TableName); ok {
+		tableName = name.TableName()
+	} else if tableName == "" {
+		tableName = underscoreName(types.Name())
+	}
+
 	return &Model{
-		TableName: underscoreName(types.Name()),
+		TableName: tableName,
 		FiledMap:  filedMap,
 	}, nil
 }

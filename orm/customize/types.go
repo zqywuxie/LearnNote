@@ -33,3 +33,7 @@ type QueryBuilder interface {
 	// Build ，Query 也可以，返回指针方便可以进行修改
 	Build() (*Query, error)
 }
+
+type TableName interface {
+	TableName() string
+}
