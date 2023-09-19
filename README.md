@@ -444,6 +444,194 @@ func (s *Selector[T]) From(table string) *Selector[T] {
 
 ![image-20230606230703189](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/06/06/image-20230606230703189.png)
 
+
+
+### 注册中心
+
+有些数据获取耗费时间长，将其缓存起来，那么只需要执行一次后续就可以得到结果。
+
+#### 设计
+
+##### 方法一
+
+map
+
+- 缺乏拓展性
+- 缺乏隔离性
+- 全局包变量难以测试
+
+```go
+var defauleModles = map[reflect.Type]*Model{}
+```
+
+##### 法二
+
+使用结构体进行包装，增加了拓展性和隔离性
+
+- 但是还是作为包变量，难以测试
+
+```go
+var defaultRegister = &register{}
+
+type register struct {
+	models map[reflect.Type]*Model
+}
+```
+
+
+
+#### 并发问题
+
+map存储数据是会出现并发问题
+
+##### 解决方法
+
+- 想办法去除并发读写的场景
+
+类似于web框架提前注册好路由
+
+- 用并发工具保护
+
+第一种用户提前注册好model（后续也只会出现并发读的），但是牺牲了开发体验来换取高性能
+
+##### 具体代码
+
+使用`sync.RWMutex` 读写锁，进行double-check
+
+```go
+type register struct {
+	// 读写锁
+	lock   sync.RWMutex
+	models map[reflect.Type]*Model
+	sync.Map
+}
+
+// 先从注册中心获取
+func (r *register) get(val any) (*Model, error) {
+	typ := reflect.TypeOf(val)
+	// 先读锁
+	r.lock.RLock()
+	model, ok := r.models[typ]
+	r.lock.RUnlock()
+	if ok {
+		return model, nil
+	}
+
+	//写锁
+	r.lock.Lock()
+	//为了确保在此期间没有其他并发操作修改了 r.models,
+	//所以需要再一次获取数据
+	model, ok = r.models[typ]
+	defer r.lock.Unlock()
+	if ok {
+		return model, nil
+	}
+
+	// 缓存中没有就进行parse
+	if !ok {
+		parseModel, err := r.ParseModel(val)
+		if err != nil {
+			return nil, err
+		}
+		r.models[typ] = parseModel
+		return parseModel, err
+	}
+	return model, nil
+}
+```
+
+or
+
+~~~go
+func (r *register) get(val any) (*Model, error) {
+	typ := reflect.TypeOf(val)
+	model, ok := r.modles.Load(typ)
+	if ok {
+		return model.(*Model), nil
+	}
+	if !ok {
+		var err error
+		if model, err = r.ParseModel(val); err != nil {
+			return nil, err
+		}
+	}
+	r.modles.Store(typ, model)
+	return model.(*Model), nil
+}
+~~~
+
+
+
+### 自定义表列名
+
+之前框架表列名都是基于结构体的字段进行改大小写等，后续用户可能需要进行自定义表列明。
+
+![image-20230919114229856](https://wuxie-image.oss-cn-chengdu.aliyuncs.com/2023/09/19/image-20230919114229856.png)
+
+#### 标签
+
+- 定义自己的标签规则
+- 解析标签
+
+```go
+type User struct {
+	ID int `orm:"column=id,xxx=xxx"`
+}
+
+func (r *register) parseTags(tags reflect.StructTag) (map[string]string, error) {
+
+	ormTag, ok := tags.Lookup("orm")
+	if !ok {
+		return map[string]string{}, nil
+	}
+	tagsValue := strings.Split(ormTag, ",")
+	res := make(map[string]string, len(tagsValue))
+	for _, tagValue := range tagsValue {
+		segs := strings.Split(tagValue, "=")
+		if len(segs) != 2 {
+			return nil, internal.NewInvalidTagContent(tagValue)
+		}
+		key := segs[0]
+		val := segs[1]
+		res[key] = val
+	}
+	return res, nil
+}
+```
+
+#### 定义接口
+
+### 自定义表名
+
+因为结构体本身无法使用标签，所以只能使用接口定义了。
+
+```go
+type CustomTableName struct {
+Name int `orm:"column=name"`
+}
+
+type TableName interface {
+TableName() string
+}
+
+func (c CustomTableName) TableName() string {
+return "custom_table_name_t"
+}
+
+
+// ParseModel方法
+var tableName string
+// 断言判断是否有自定义表名的方法，如果有就拿
+// 记得判断是否为空值，防止用户传入kong'zhi
+if name, ok := val.(TableName); ok {
+    tableName = name.TableName()
+} else if tableName == "" {
+    tableName = underscoreName(types.Name())
+}
+```
+
+
+
 ## 反射
 
 ### 读写字段
