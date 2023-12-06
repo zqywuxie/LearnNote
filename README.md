@@ -15,7 +15,7 @@
 
 - Java
   - spring
-    - 资料：[从 0 开始深入学习 Spring - LinkedBear - 掘金小册 (juejin.cn)](https://juejin.cn/book/6857911863016390663?enter_from=course_center&utm_source=course_center)（付费，较多）
+    - 资料：[从 0 开始深入学习 Spring - LinkedBear - 掘金小册 (juejin.cn)](https://juejin.cn/book/6857911863016390663?enter_from=course_center&utm_source=course_center)（付费，内容较多）
     - 视频：尚硅谷spring6源码解析
 - Golang
   - golang
